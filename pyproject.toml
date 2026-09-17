@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skill-ctl"
+version = "0.1.0"
+description = "AI Agent Skill & Preset Manager powered by npx skills (skills.sh)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Hadi" }
+]
+keywords = ["ai", "agents", "skills", "presets", "claude", "cursor", "antigravity"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+    "Topic :: Software Development",
+]
+dependencies = [
+    "typer>=0.23.2",
+    "pyyaml>=6.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-xdist>=3.0",
+]
+
+[project.scripts]
+skctl = "skill_ctl.cli:main"
+skill-ctl = "skill_ctl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["skill_ctl*"]
+
+[tool.setuptools.package-data]
+skill_ctl = ["*.mjs"]
