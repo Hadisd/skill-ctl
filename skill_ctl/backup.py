@@ -20,6 +20,13 @@ __pycache__/
 *.pyc
 .DS_Store
 .metadata_cache.json
+
+# Machine-specific: config.yaml is per-machine preference (theme, targets,
+# default_preset...) and applied.json holds this machine's absolute project
+# paths, so neither travels to another machine by default. `skctl backup push
+# --config` opts config.yaml back in; applied.json never syncs.
+/config.yaml
+/applied.json
 """
 
 
@@ -68,6 +75,11 @@ def ensure_local_repo() -> None:
     gitignore = BASE_DIR / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(GITIGNORE, encoding="utf-8")
+    elif "/config.yaml" not in gitignore.read_text(encoding="utf-8"):
+        # An older backup wrote the gitignore before config.yaml/applied.json
+        # became machine-specific; extend it rather than clobber any custom rules.
+        with gitignore.open("a", encoding="utf-8") as f:
+            f.write("\n/config.yaml\n/applied.json\n")
 
 
 def keep_empty_presets() -> None:
@@ -144,16 +156,26 @@ def backup(
         bool,
         typer.Option("--dry-run", help="Show incoming backup changes without restoring them.")
     ] = False,
+    include_config: Annotated[
+        bool,
+        typer.Option("--config", help="Also back up config.yaml (excluded by default; it's per-machine preference).")
+    ] = False,
 ) -> None:
-    """Back up ~/.skill-ctl (presets and config.yaml) to a GitHub repository.
+    """Back up ~/.skill-ctl (presets, not config.yaml) to a GitHub repository.
 
     `init` points it at a repo, `push` commits and uploads, `pull` restores on
     another machine, `status` shows what is not backed up yet.
+
+    config.yaml and applied.json stay local: config.yaml holds per-machine
+    preferences (theme, apply targets, default preset) and applied.json holds
+    this machine's absolute project paths, so restoring them on another
+    machine would fight its own setup rather than help it. Pass --config to
+    a push to include config.yaml anyway; applied.json never syncs.
     """
     if action == "init":
         backup_init(repo, public)
     elif action == "push":
-        backup_push(message, repo, public)
+        backup_push(message, repo, public, include_config)
     elif action == "pull":
         backup_pull(repo, yes, dry_run)
     else:
@@ -190,7 +212,18 @@ def backup_init(repo: Optional[str], public: bool) -> None:
     console.print("Next: [header]skctl backup push[/header]")
 
 
-def backup_push(message: Optional[str], repo: Optional[str], public: bool) -> None:
+def untrack_if_tracked(rel_path: str) -> None:
+    """Drop a file from the next commit without deleting it from disk.
+
+    Handles backups made before config.yaml/applied.json were gitignored:
+    once tracked, `git add -A` keeps re-adding a file regardless of
+    .gitignore, so it must be explicitly untracked once.
+    """
+    if git(["ls-files", "--error-unmatch", rel_path], capture=True).returncode == 0:
+        git(["rm", "--cached", "-q", rel_path])
+
+
+def backup_push(message: Optional[str], repo: Optional[str], public: bool, include_config: bool = False) -> None:
     # backup_init calls ensure_local_repo itself, so only the already-set-up
     # path needs it here.
     if not has_repo() or not remote_url():
@@ -199,6 +232,12 @@ def backup_push(message: Optional[str], repo: Optional[str], public: bool) -> No
         ensure_local_repo()
 
     keep_empty_presets()
+    untrack_if_tracked("applied.json")
+    if include_config:
+        if git(["add", "-f", "config.yaml"]).returncode != 0:
+            sys.exit(1)
+    else:
+        untrack_if_tracked("config.yaml")
     if git(["add", "-A"]).returncode != 0:
         sys.exit(1)
 

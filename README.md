@@ -426,7 +426,7 @@ A preset needs `skills-lock.json` before it can update. `--all` skips older pres
 
 ## Backups
 
-`skctl backup` stores `~/.skill-ctl`, including preset files and `config.yaml`, in a Git repository.
+`skctl backup` stores `~/.skill-ctl`'s preset files in a Git repository. `config.yaml` (per-machine preferences) and `applied.json` (this machine's absolute project paths) stay local, since restoring them on another machine would fight its own setup. Pass `--config` to `skctl backup push` to include `config.yaml` anyway; `applied.json` never syncs.
 
 Initialize a backup:
 
