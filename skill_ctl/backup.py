@@ -263,16 +263,13 @@ def maybe_reset_local_history(old_url: Optional[str], new_url: str, yes: bool) -
 
 
 def suggest_next_step(url: str) -> tuple[str, str]:
-    """The command that matches this repo's state, plus a note on the other
-    one: guessing wrong here is exactly what used to cause the 'fetch
-    first' / 'Access is denied' tangle, so both stay visible."""
+    """The command that matches this repo's state, plus the other one as a
+    short alternative: guessing wrong here is exactly what used to cause the
+    'fetch first' / 'Access is denied' tangle, so both stay visible."""
     remote_has_commits = git(["ls-remote", "--exit-code", "--heads", url, BRANCH], capture=True).returncode == 0
-    local_has_commits = git(["rev-parse", "--verify", "HEAD"], capture=True).returncode == 0
-    if remote_has_commits and not local_has_commits:
-        return "skctl backup pull", "this repo already has a backup; push only if you want to overwrite it with what's here"
-    if remote_has_commits and local_has_commits:
-        return "skctl backup pull", "or skctl backup push --force if this machine's presets should replace what's there"
-    return "skctl backup push", "or skctl backup pull if this repo already has a backup you want instead"
+    if remote_has_commits:
+        return "skctl backup pull", "or push --force"
+    return "skctl backup push", "or pull"
 
 
 def untrack_if_tracked(rel_path: str) -> None:
