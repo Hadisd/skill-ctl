@@ -456,6 +456,12 @@ Preview a restore before it writes files:
 skctl backup pull --dry-run
 ```
 
+If a push is rejected because the remote has commits from another machine you don't have locally, `skctl backup pull` is the usual fix. When this machine's presets are the ones you actually want to keep, force-push over the remote instead:
+
+```bash
+skctl backup push --force
+```
+
 `backup pull` replaces a fresh local `~/.skill-ctl` after confirmation. It stops if the local repository has commits missing from the remote.
 
 ## Sharing one preset

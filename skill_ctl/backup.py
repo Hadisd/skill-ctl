@@ -150,7 +150,7 @@ def backup(
     ] = False,
     yes: Annotated[
         bool,
-        typer.Option("--yes", "-y", help="Skip the confirmation when a pull overwrites local presets.")
+        typer.Option("--yes", "-y", help="Skip the confirmation when a pull or --force push overwrites presets.")
     ] = False,
     dry_run: Annotated[
         bool,
@@ -159,6 +159,10 @@ def backup(
     include_config: Annotated[
         bool,
         typer.Option("--config", help="Also back up config.yaml (excluded by default; it's per-machine preference).")
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Force-push 'push', discarding any commits the remote has that you don't. Confirms first.")
     ] = False,
 ) -> None:
     """Back up ~/.skill-ctl (presets, not config.yaml) to a GitHub repository.
@@ -171,11 +175,16 @@ def backup(
     this machine's absolute project paths, so restoring them on another
     machine would fight its own setup rather than help it. Pass --config to
     a push to include config.yaml anyway; applied.json never syncs.
+
+    A push rejected because the remote has commits you don't (e.g. pushed
+    from another machine) normally means `skctl backup pull` first. --force
+    skips that and overwrites the remote with what's here instead - use it
+    when this machine's presets are the ones you want to keep.
     """
     if action == "init":
         backup_init(repo, public)
     elif action == "push":
-        backup_push(message, repo, public, include_config)
+        backup_push(message, repo, public, include_config, force, yes)
     elif action == "pull":
         backup_pull(repo, yes, dry_run)
     else:
@@ -233,7 +242,14 @@ def untrack_if_tracked(rel_path: str) -> None:
         git(["rm", "--cached", "-q", rel_path])
 
 
-def backup_push(message: Optional[str], repo: Optional[str], public: bool, include_config: bool = False) -> None:
+def backup_push(
+    message: Optional[str],
+    repo: Optional[str],
+    public: bool,
+    include_config: bool = False,
+    force: bool = False,
+    yes: bool = False,
+) -> None:
     # backup_init calls ensure_local_repo itself, so only the already-set-up
     # path needs it here.
     if not has_repo() or not remote_url():
@@ -258,13 +274,39 @@ def backup_push(message: Optional[str], repo: Optional[str], public: bool, inclu
         sys.exit(1)
 
     url = remote_url()
+    push_args = ["push", "-u", "origin", BRANCH]
+    if force:
+        # Fetch first so --force-with-lease has a remote-tracking ref to
+        # compare against: it then refuses if the remote has moved again
+        # since, instead of blindly clobbering whatever is there right now.
+        git(["fetch", "origin", BRANCH], capture=True)
+        if not confirm_force_push(url, yes):
+            print_warn("Force-push cancelled.")
+            return
+        push_args.insert(1, "--force-with-lease")
+
     print_header(f"Pushing {BASE_DIR} to {url}")
-    result = git(["push", "-u", "origin", BRANCH], capture=True)
+    result = git(push_args, capture=True)
     if result.returncode != 0:
         console.print((result.stderr or result.stdout).rstrip())
         explain_push_failure(result.stderr or "", url or "")
         sys.exit(result.returncode)
     print_success("Presets backed up.")
+
+
+def confirm_force_push(url: Optional[str], yes: bool) -> bool:
+    if yes:
+        return True
+    print_warn(f"This overwrites {url} with what's here, permanently discarding any commits only it has.")
+    if not sys.stdin.isatty():
+        return False
+    try:
+        from rich.prompt import Confirm
+
+        return Confirm.ask("Force-push anyway?", default=False, console=console)
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return False
 
 
 def explain_push_failure(stderr: str, url: str) -> None:
