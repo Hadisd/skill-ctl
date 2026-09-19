@@ -182,7 +182,7 @@ def backup(
     when this machine's presets are the ones you want to keep.
     """
     if action == "init":
-        backup_init(repo, public)
+        backup_init(repo, public, yes)
     elif action == "push":
         backup_push(message, repo, public, include_config, force, yes)
     elif action == "pull":
@@ -191,7 +191,7 @@ def backup(
         backup_status()
 
 
-def backup_init(repo: Optional[str], public: bool) -> None:
+def backup_init(repo: Optional[str], public: bool, yes: bool = False) -> None:
     ensure_local_repo()
     current = remote_url()
 
@@ -216,19 +216,59 @@ def backup_init(repo: Optional[str], public: bool) -> None:
             print_warn("Run: skctl backup init --repo owner/name   (or install the gh CLI to create one)")
             sys.exit(1)
 
+    maybe_reset_local_history(current, url, yes)
+
     print_success(f"Backing up {BASE_DIR} to {url}")
     print_warn("Presets are uploaded as-is; use a private repo if any skill is not public.")
-    console.print(f"Next: [header]{suggest_next_step(url)}[/header]")
+    step, note = suggest_next_step(url)
+    console.print(f"Next: [header]{step}[/header]  [dim]({note})[/dim]")
 
 
-def suggest_next_step(url: str) -> str:
-    """`push` seeds a fresh repo; `pull` is right when the repo already has a
-    backup and this machine (freshly `init`ed) does not."""
+def maybe_reset_local_history(old_url: Optional[str], new_url: str, yes: bool) -> None:
+    """Offer to drop this machine's git history when `init` repoints it at a
+    different repo than before.
+
+    Carrying the old repo's commits over is what used to send `push`/`pull`
+    down the wrong path: the new remote has unrelated history, so a plain
+    push gets rejected ("fetch first") and `suggest_next_step` reasons about
+    the wrong repo's state. A repo `init` has never pointed at before has
+    nothing to reset for.
+    """
+    if not old_url or old_url == new_url:
+        return
+    if git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0:
+        return  # nothing committed yet, nothing to lose
+    print_warn(f"{BASE_DIR} still has git history from the previous backup repo ({old_url}).")
+    if not yes:
+        if not sys.stdin.isatty():
+            print_warn("Keeping that history (not a terminal to confirm dropping it); pass --yes to drop it automatically.")
+            return
+        try:
+            from rich.prompt import Confirm
+
+            if not Confirm.ask("Start fresh for the new repo (drop that local history)?", default=True, console=console):
+                return
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+    shutil.rmtree(BASE_DIR / ".git")
+    if git(["init", "-b", BRANCH]).returncode != 0:
+        sys.exit(1)
+    set_remote(new_url)
+    print_success("Started a fresh local history for the new backup repo.")
+
+
+def suggest_next_step(url: str) -> tuple[str, str]:
+    """The command that matches this repo's state, plus a note on the other
+    one: guessing wrong here is exactly what used to cause the 'fetch
+    first' / 'Access is denied' tangle, so both stay visible."""
     remote_has_commits = git(["ls-remote", "--exit-code", "--heads", url, BRANCH], capture=True).returncode == 0
     local_has_commits = git(["rev-parse", "--verify", "HEAD"], capture=True).returncode == 0
     if remote_has_commits and not local_has_commits:
-        return "skctl backup pull"
-    return "skctl backup push"
+        return "skctl backup pull", "this repo already has a backup; push only if you want to overwrite it with what's here"
+    if remote_has_commits and local_has_commits:
+        return "skctl backup pull", "or skctl backup push --force if this machine's presets should replace what's there"
+    return "skctl backup push", "or skctl backup pull if this repo already has a backup you want instead"
 
 
 def untrack_if_tracked(rel_path: str) -> None:
@@ -253,7 +293,7 @@ def backup_push(
     # backup_init calls ensure_local_repo itself, so only the already-set-up
     # path needs it here.
     if not has_repo() or not remote_url():
-        backup_init(repo, public)
+        backup_init(repo, public, yes)
     else:
         ensure_local_repo()
 
@@ -372,7 +412,7 @@ def github_login() -> Optional[str]:
 
 def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False) -> None:
     if repo or not has_repo():
-        backup_init(repo, False)
+        backup_init(repo, False, yes)
     url = remote_url()
     if not url:
         print_error("No backup repository configured. Run: skctl backup init --repo owner/name")
