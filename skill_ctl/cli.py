@@ -120,7 +120,7 @@ PRESET_ACTION_USAGE = {
     "rename": "skctl presets rename <old-name> <new-name>",
     "delete": "skctl presets delete <name>",
     "export": "skctl presets export <name> [--output ARCHIVE]",
-    "import": "skctl presets import <archive> [--rename NAME] [--replace] [--dry-run]",
+    "import": "skctl presets import <archive|owner/repo> [--preset NAME] [--rename NAME] [--replace] [--dry-run]",
 }
 
 

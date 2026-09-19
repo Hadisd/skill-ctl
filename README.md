@@ -158,7 +158,7 @@ skctl rm                   # choose installed skills to remove
 | `skctl presets history <name>` | Show a preset's clone or combine origin |
 | `skctl presets delete <name>` | Delete a preset |
 | `skctl presets export <name>` | Export one preset to a portable archive |
-| `skctl presets import <archive>` | Preview and import a portable preset archive |
+| `skctl presets import <archive\|owner/repo>` | Preview and import a portable preset archive or GitHub preset |
 | `skctl list [--preset <name>\|-g]` | List project, preset, or global skills |
 | `skctl search [query]` | Interactively search and apply preset and global skills |
 | `skctl search [query] --preset <name>` | Search one preset |
@@ -473,6 +473,23 @@ skctl presets export frontend --output frontend.skctl-preset.zip
 skctl presets import frontend.skctl-preset.zip --dry-run
 skctl presets import frontend.skctl-preset.zip --rename frontend-copy
 ```
+
+Import public presets from a GitHub backup repository. Without `--preset`, an
+interactive `fzf` picker lists the repository's presets with their skills and
+files in the preview pane. Its keys match the other pickers: `Tab` selects,
+`Ctrl-A` selects all visible presets, `Ctrl-D` clears the selection, and
+`Enter` imports.
+
+```bash
+skctl presets import owner/repo
+skctl presets import owner/repo --preset frontend
+skctl presets import owner/repo --preset frontend --preset research
+skctl presets import owner/repo --preset frontend --rename community-frontend
+skctl presets import owner/repo --preset frontend --dry-run
+```
+
+The repository must contain presets under `presets/<name>/`. Imports add to
+your existing presets. A name conflict requires `--rename` or `--replace`.
 
 Enable automatic pushes after commands that change a preset:
 

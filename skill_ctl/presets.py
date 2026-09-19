@@ -317,6 +317,127 @@ def preset_import(
     print_success(f"Imported preset '{target_name}' from {archive_path}")
     maybe_auto_push(f"import preset {target_name}")
 
+
+def github_repo_url(repository: str) -> str:
+    """Turn GitHub's owner/repository shorthand into a clone URL."""
+    if "://" in repository or repository.startswith("git@") or Path(repository).exists():
+        return repository
+    if repository.count("/") == 1:
+        return f"https://github.com/{repository}.git"
+    print_error("GitHub repositories must be owner/repository or a clone URL.")
+    sys.exit(1)
+
+
+def remote_preset_preview(preset_dir: Path) -> str:
+    """Show the useful parts of a downloaded preset without its temporary path."""
+    skills = sorted(get_preset_skills(preset_dir))
+    files = sorted(str(path.relative_to(preset_dir)) for path in preset_dir.rglob("*") if path.is_file())
+    return (
+        f"Preset: {preset_dir.name}\n\nSkills ({len(skills)}):\n"
+        + "\n".join(f"  {skill}" for skill in skills)
+        + f"\n\nFiles ({len(files)}):\n"
+        + "\n".join(f"  {path}" for path in files)
+    )
+
+
+def pick_remote_presets(preset_dirs: list[Path]) -> list[str]:
+    """Pick downloaded presets with the same selection keys as other pickers."""
+    config = load_config()
+    if not wants_picker(config):
+        return []
+    colors = picker_ansi(config.get("theme"))
+    reset = colors["reset"]
+    with tempfile.TemporaryDirectory(prefix="skctl-remote-presets-") as temporary:
+        root = Path(temporary)
+        rows = []
+        for index, preset_dir in enumerate(preset_dirs, 1):
+            preview = root / str(index)
+            preview.write_text(remote_preset_preview(preset_dir), encoding="utf-8")
+            rows.append("\t".join((
+                str(index),
+                f"{colors['name']}{preset_dir.name:<22}{reset}",
+                f"{colors['description']}{len(get_preset_skills(preset_dir)):>6}{reset}",
+                str(preview),
+            )))
+        preview_command = "type {4}" if os.name == "nt" else "cat {4}"
+        result = subprocess.run(
+            [
+                "fzf", "--ansi", "--multi", "--tabstop", "2", "--delimiter", "\t", "--with-nth", "2,3",
+                "--header", "Preset                  Skills\nTab select · Ctrl-A all · Ctrl-D none · Enter import",
+                "--color", fzf_color_arg(config.get("theme")),
+                "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
+                "--preview", preview_command, "--preview-window", "right,55%,wrap",
+            ],
+            input="\n".join(rows), stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+            check=False,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        return [preset_dirs[int(row.split("\t", 1)[0]) - 1].name for row in result.stdout.splitlines()]
+
+
+def import_github_presets(
+    repository: str,
+    names: list[str],
+    rename: Optional[str] = None,
+    replace: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Download a GitHub preset backup and import selected presets from it."""
+    if rename and len(names) > 1:
+        print_error("--rename can only be used with one --preset.")
+        sys.exit(1)
+    if shutil.which("git") is None:
+        print_error("'git' not found on PATH. Install git and retry.")
+        sys.exit(1)
+    with tempfile.TemporaryDirectory(prefix="skctl-github-") as temporary:
+        clone = Path(temporary) / "repository"
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", github_repo_url(repository), str(clone)],
+            capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            print_error((result.stderr or result.stdout).strip() or f"Could not download {repository}.")
+            sys.exit(1)
+        source_root = clone / "presets"
+        available = sorted(path for path in source_root.iterdir() if path.is_dir()) if source_root.is_dir() else []
+        if not available:
+            print_error(f"No presets found in {repository}. Expected a presets/ directory.")
+            sys.exit(1)
+        available_by_name = {path.name: path for path in available}
+        selected = names or pick_remote_presets(available)
+        if not selected:
+            if names:
+                return
+            print_warn("No preset selected. Pass --preset NAME when fzf is unavailable.")
+            return
+        missing = [name for name in selected if name not in available_by_name]
+        if missing:
+            print_error(f"Preset not found in {repository}: {', '.join(missing)}")
+            sys.exit(1)
+        for source_name in selected:
+            target_name = rename or source_name
+            target = preset_path(target_name)
+            source = available_by_name[source_name]
+            changes = preset_changes(target, source) if target.exists() else [
+                ("add", path.relative_to(source)) for path in source.rglob("*") if path.is_file()
+            ]
+            print_header(f"Import preview: '{source_name}' -> '{target_name}'")
+            for action, path in changes:
+                console.print(f"  {action:6} {path}")
+            if not changes:
+                console.print("  [dim]no file changes[/dim]")
+            if dry_run:
+                continue
+            if target.exists() and not replace:
+                print_error(f"Preset '{target_name}' already exists. Use --replace or --rename <name>.")
+                continue
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+            print_success(f"Imported preset '{target_name}' from {repository}")
+            maybe_auto_push(f"import preset {target_name}")
+
 def copy_skills_from_path(source_path: str, destination: Path) -> int:
     """Copy direct skills from a skill root, agent folder, or project directory."""
     source = Path(source_path).expanduser().resolve()
@@ -1304,6 +1425,7 @@ def presets(
     from_path: Annotated[Optional[str], typer.Option("--from", help="Copy skills from this path when creating a preset.")] = None,
     clean: Annotated[bool, typer.Option("--clean")] = False,
     output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output path for `presets export`.")] = None,
+    import_presets: Annotated[Optional[list[str]], typer.Option("--preset", "-P", help="Preset to import from a GitHub repository; repeat to import several.")] = None,
     import_rename: Annotated[Optional[str], typer.Option("--rename", help="New name for an imported preset.")] = None,
     replace: Annotated[bool, typer.Option("--replace", help="Replace an existing preset when importing, cloning, or combining.")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview an import, clone, or combine without writing files.")] = False,
@@ -1314,7 +1436,8 @@ def presets(
     `skctl presets combine DEV FRONTEND BACKEND`,
     `skctl presets history DEV`,
     `skctl presets export NAME -o ARCHIVE`,
-    `skctl presets import ARCHIVE --rename NAME`.
+    `skctl presets import ARCHIVE --rename NAME`, or
+    `skctl presets import OWNER/REPO --preset NAME`.
 
     Deleting the default_preset leaves an empty one behind, because `apply` and
     the add prompt both fall back to it.
@@ -1352,9 +1475,15 @@ def presets(
         return
     if action == "import":
         if not name:
-            print_error("Error: Usage: skctl presets import <archive> [--rename <name>] [--replace]")
+            print_error("Error: Usage: skctl presets import <archive|owner/repo> [--preset <name>] [--rename <name>] [--replace]")
             sys.exit(1)
-        preset_import(name, import_rename, replace, dry_run)
+        if Path(name).expanduser().is_file():
+            if import_presets:
+                print_error("--preset is only available when importing a GitHub repository.")
+                sys.exit(1)
+            preset_import(name, import_rename, replace, dry_run)
+        else:
+            import_github_presets(name, import_presets or [], import_rename, replace, dry_run)
         return
 
     config = load_config()

@@ -2,4 +2,4 @@
 skill-ctl: AI Agent Skill & Preset Manager powered by npx skills (skills.sh)
 """
 
-__version__ = "0.1.9"
+__version__ = "0.1.0"
