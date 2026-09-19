@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -112,6 +113,9 @@ def self_update(
         return
 
     command = installer_command(Path(sys.prefix), Path(sys.executable), release.wheel_url)
+    if os.name == "nt":
+        run_installer_after_exit_windows(command, release.tag)
+        return
     try:
         result = subprocess.run(command)
     except OSError as error:
@@ -121,3 +125,31 @@ def self_update(
         print_error(f"Could not update skctl to {release.tag}.")
         raise SystemExit(1)
     print_success(f"Updated skctl to {release.tag}.")
+
+
+def run_installer_after_exit_windows(command: list[str], tag: str) -> None:
+    """Windows keeps this process's own install directory (the `Scripts`
+    folder holding skctl.exe) locked while it runs, so the installer cannot
+    delete and replace it from inside this same process - `uv tool install
+    --reinstall` fails with "Access is denied" removing that folder.
+
+    Hand the install off to a detached process that waits for this one to
+    exit, then run the installer; exit immediately ourselves so the lock is
+    released before it gets there.
+    """
+    pid = os.getpid()
+    quoted = " ".join(f'"{part}"' if " " in part else part for part in command)
+    ps_command = f"Wait-Process -Id {pid} -ErrorAction SilentlyContinue; {quoted}"
+    try:
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_command],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    except OSError as error:
+        print_error(f"Could not start installer: {error}")
+        raise SystemExit(1) from error
+    print_success(
+        f"skctl will finish updating to {tag} in the background once this exits "
+        "(Windows can't replace its own running files) - re-run `skctl --version` in a few seconds to confirm."
+    )

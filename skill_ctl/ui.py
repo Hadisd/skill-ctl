@@ -1,5 +1,6 @@
 """Generic Rich console formatting."""
 
+import re
 from typing import Optional
 
 from rich.console import Console
@@ -11,6 +12,8 @@ _default_theme = build_theme()
 console = Console(theme=_default_theme)
 err_console = Console(stderr=True, theme=_default_theme)
 
+_TAG_RE = re.compile(r"\[/?[a-zA-Z_]+\]")
+
 
 def set_theme(name: Optional[str]) -> None:
     theme = build_theme(name)
@@ -18,20 +21,31 @@ def set_theme(name: Optional[str]) -> None:
     err_console.push_theme(theme, inherit=False)
 
 
+def _safe_print(target_console: Console, text: str) -> None:
+    """Rich itself can fail to render (e.g. a broken/mismatched optional
+    dependency such as rich's own unicode-width tables), which must not
+    swallow the message a caller is trying to report. Fall back to plain
+    text so the actual error always reaches the user."""
+    try:
+        target_console.print(text)
+    except Exception:
+        print(_TAG_RE.sub("", text))
+
+
 def print_header(text: str) -> None:
-    console.print(f"[header]◇[/header]  [bold]{escape(text)}[/bold]")
+    _safe_print(console, f"[header]◇[/header]  [bold]{escape(text)}[/bold]")
 
 
 def print_success(text: str) -> None:
-    console.print(f"[success]✓[/success]  {escape(text)}")
+    _safe_print(console, f"[success]✓[/success]  {escape(text)}")
 
 
 def print_warn(text: str) -> None:
-    console.print(f"[warn]![/warn]  {escape(text)}")
+    _safe_print(console, f"[warn]![/warn]  {escape(text)}")
 
 
 def print_error(text: str) -> None:
-    err_console.print(f"[error]✗[/error]  {escape(text)}")
+    _safe_print(err_console, f"[error]✗[/error]  {escape(text)}")
 
 
 # Backward-compatible re-exports
