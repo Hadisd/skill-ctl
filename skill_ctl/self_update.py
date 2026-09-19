@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 from typing import Annotated
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -13,7 +12,7 @@ import typer
 from rich.prompt import Confirm
 
 from skill_ctl import __version__
-from skill_ctl.ui import print_error, print_success
+from skill_ctl.ui import console, print_error, print_success, print_warn
 
 LATEST_RELEASE_URL = "https://api.github.com/repos/Hadisd/skill-ctl/releases/latest"
 
@@ -121,7 +120,7 @@ def self_update(
 
     command = installer_command(Path(sys.prefix), Path(sys.executable), release.wheel_url, release.tag)
     if os.name == "nt":
-        run_installer_after_exit_windows(command, release.tag)
+        print_windows_manual_command(command)
         return
     try:
         result = subprocess.run(command)
@@ -134,60 +133,17 @@ def self_update(
     print_success(f"Updated skctl to {release.tag}.")
 
 
-def _ps_quote(value: str) -> str:
-    """Single-quote a value for PowerShell, escaping embedded single quotes."""
-    return "'" + value.replace("'", "''") + "'"
+def print_windows_manual_command(command: list[str]) -> None:
+    """Windows keeps this process's own install directory locked while it
+    runs, so skctl cannot replace itself from inside its own process.
 
-
-def run_installer_after_exit_windows(command: list[str], tag: str) -> None:
-    """Windows keeps this process's own install directory (the `Scripts`
-    folder holding skctl.exe) locked while it runs, so the installer cannot
-    delete and replace it from inside this same process - `uv tool install
-    --reinstall` fails with "Access is denied" removing that folder.
-
-    Hand the install off to a detached process that waits for this one to
-    exit, then runs the installer, retrying briefly: even after this process
-    is gone, Windows (or an antivirus scanner touching the just-closed exe)
-    can hold the file a little longer, so one immediate attempt is not
-    reliable. Exit immediately ourselves so the lock is released before any
-    of that runs. Output goes to a log file since nothing here can be shown
-    to the user once this process exits.
+    A detached background process was tried here before, to run the
+    installer once this process exits; it was unreliable in practice (silent
+    failures, timing-dependent) and harder to debug than just running the
+    command directly. Printing it for a manual run in a fresh shell matches
+    what's actually proven to work.
     """
-    pid = os.getpid()
-    log_path = Path(os.environ.get("TEMP") or os.environ.get("TMP") or str(Path.home())) / "skctl-self-update.log"
-    command_ps = " ".join(_ps_quote(part) for part in command)
-    script = f"""
-Wait-Process -Id {pid} -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 300
-$log = {_ps_quote(str(log_path))}
-"$(Get-Date) - Updating skctl to {tag}..." | Out-File -FilePath $log -Encoding utf8
-$attempt = 0
-$ok = $false
-while (-not $ok -and $attempt -lt 8) {{
-    $attempt++
-    & {command_ps} *>> $log
-    if ($LASTEXITCODE -eq 0) {{ $ok = $true }} else {{ Start-Sleep -Milliseconds 750 }}
-}}
-if ($ok) {{
-    "skctl updated to {tag} (attempt $attempt)." | Out-File -FilePath $log -Append -Encoding utf8
-}} else {{
-    "skctl update to {tag} failed after $attempt attempt(s); see output above." | Out-File -FilePath $log -Append -Encoding utf8
-}}
-"""
-    try:
-        with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as script_file:
-            script_file.write(script)
-            script_path = script_file.name
-        subprocess.Popen(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script_path],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-        )
-    except OSError as error:
-        print_error(f"Could not start installer: {error}")
-        raise SystemExit(1) from error
-    print_success(
-        f"skctl will finish updating to {tag} in the background once this exits "
-        "(Windows can't replace its own running files) - re-run `skctl --version` in a few seconds to confirm."
-    )
-    print(f"If it's still the old version, check {log_path} for what the installer reported.")
+    quoted = " ".join(f'"{part}"' if " " in part else part for part in command)
+    print_warn("Windows can't replace its own running files while skctl is running them.")
+    console.print("Run this in a new terminal (after closing this one):")
+    console.print(f"  [header]{quoted}[/header]")
