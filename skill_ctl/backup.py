@@ -209,7 +209,17 @@ def backup_init(repo: Optional[str], public: bool) -> None:
 
     print_success(f"Backing up {BASE_DIR} to {url}")
     print_warn("Presets are uploaded as-is; use a private repo if any skill is not public.")
-    console.print("Next: [header]skctl backup push[/header]")
+    console.print(f"Next: [header]{suggest_next_step(url)}[/header]")
+
+
+def suggest_next_step(url: str) -> str:
+    """`push` seeds a fresh repo; `pull` is right when the repo already has a
+    backup and this machine (freshly `init`ed) does not."""
+    remote_has_commits = git(["ls-remote", "--exit-code", "--heads", url, BRANCH], capture=True).returncode == 0
+    local_has_commits = git(["rev-parse", "--verify", "HEAD"], capture=True).returncode == 0
+    if remote_has_commits and not local_has_commits:
+        return "skctl backup pull"
+    return "skctl backup push"
 
 
 def untrack_if_tracked(rel_path: str) -> None:
