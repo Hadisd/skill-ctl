@@ -65,10 +65,16 @@ def fetch_latest_release() -> Release:
         raise SelfUpdateError(f"Could not check for updates: {error}") from error
 
 
-def installer_command(prefix: Path, executable: Path, wheel_url: str) -> list[str]:
+def installer_command(prefix: Path, executable: Path, wheel_url: str, tag: str) -> list[str]:
     prefix_text = str(prefix).replace("\\", "/").lower()
     if "/uv/tools/skill-ctl" in prefix_text:
-        return ["uv", "tool", "install", "--reinstall", wheel_url]
+        # A source URL pinned to the release tag, not the release wheel: `uv
+        # tool install --reinstall <wheel_url>` forces a full from-scratch
+        # reinstall, which on Windows means deleting the whole tool
+        # directory (including the running skctl.exe's own Scripts folder)
+        # before recreating it - a much heavier, lock-prone operation than
+        # the in-place upgrade a plain `uv tool install <source>` performs.
+        return ["uv", "tool", "install", f"git+https://github.com/Hadisd/skill-ctl@{tag}"]
     if "/pipx/venvs/skill-ctl" in prefix_text:
         return ["pipx", "install", "--force", wheel_url]
     return [str(executable), "-m", "pip", "install", "--upgrade", wheel_url]
@@ -113,7 +119,7 @@ def self_update(
         print("Update cancelled.")
         return
 
-    command = installer_command(Path(sys.prefix), Path(sys.executable), release.wheel_url)
+    command = installer_command(Path(sys.prefix), Path(sys.executable), release.wheel_url, release.tag)
     if os.name == "nt":
         run_installer_after_exit_windows(command, release.tag)
         return

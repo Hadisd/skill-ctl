@@ -162,7 +162,11 @@ def backup(
     ] = False,
     force: Annotated[
         bool,
-        typer.Option("--force", help="Force-push 'push', discarding any commits the remote has that you don't. Confirms first.")
+        typer.Option(
+            "--force",
+            help="On 'push', overwrite the remote with what's here. On 'pull', discard local commits and take the "
+                 "remote's instead. Either way, whichever side loses commits loses them for good; confirms first.",
+        )
     ] = False,
 ) -> None:
     """Back up ~/.skill-ctl (presets, not config.yaml) to a GitHub repository.
@@ -186,7 +190,7 @@ def backup(
     elif action == "push":
         backup_push(message, repo, public, include_config, force, yes)
     elif action == "pull":
-        backup_pull(repo, yes, dry_run)
+        backup_pull(repo, yes, dry_run, force)
     else:
         backup_status()
 
@@ -410,7 +414,7 @@ def github_login() -> Optional[str]:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False) -> None:
+def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bool = False) -> None:
     if repo or not has_repo():
         backup_init(repo, False, yes)
     url = remote_url()
@@ -428,14 +432,17 @@ def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False) -> None:
 
     # An empty local repo means a restore: there is no history to merge onto, and
     # whatever sits in ~/.skill-ctl now would block the checkout, so it is replaced.
-    if git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0:
+    # --force does the same replace even when local has its own commits, discarding them.
+    fresh = git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0
+    if fresh or force:
         if not yes and sys.stdin.isatty():
             from rich.prompt import Confirm
             console.print()
-            if not Confirm.ask(
-                f"[bold]Replace the contents of {BASE_DIR} with the backup?[/bold]",
-                default=False, console=console,
-            ):
+            prompt = (
+                f"Replace the contents of {BASE_DIR} with the backup?" if fresh
+                else f"Discard local commits not in the backup and replace {BASE_DIR} with it?"
+            )
+            if not Confirm.ask(f"[bold]{prompt}[/bold]", default=False, console=console):
                 sys.exit(0)
         if git(["checkout", "-f", "-B", BRANCH, f"origin/{BRANCH}"]).returncode != 0:
             sys.exit(1)
@@ -443,8 +450,10 @@ def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False) -> None:
         return
 
     if git(["merge", "--ff-only", f"origin/{BRANCH}"]).returncode != 0:
-        print_error("Local presets have changes the backup does not. Push them first, or merge by hand:")
-        console.print(f"  [header]cd {BASE_DIR} && git status[/header]")
+        print_error("Local presets have changes the backup does not.")
+        console.print("  [header]skctl backup push --force[/header]  (send your local changes up, overwriting the backup)")
+        console.print("  [header]skctl backup pull --force[/header]  (discard your local changes, take the backup's instead)")
+        console.print(f"  [header]cd {BASE_DIR} && git status[/header]  (or merge by hand)")
         sys.exit(1)
     print_success("Presets up to date with the backup.")
 
