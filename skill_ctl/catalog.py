@@ -10,6 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -72,7 +73,11 @@ def row_colors() -> dict[str, str]:
 
 
 def get_json(url: str, timeout: float = 10) -> dict:
-    request = Request(url, headers={"Accept": "application/json", "User-Agent": "skill-ctl"})
+    headers = {"Accept": "application/json", "User-Agent": "skill-ctl"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token and "api.github.com" in url:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(url, headers=headers)
     with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read())
 
@@ -288,9 +293,15 @@ def github_source(source: str) -> Optional[str]:
     return None
 
 
-def _fetch_raw_github_file(repo: str, path: str, timeout: float = 4.0) -> Optional[str]:
-    url = f"https://raw.githubusercontent.com/{repo}/HEAD/{path}"
-    req = Request(url, headers={"User-Agent": "skill-ctl"})
+def _fetch_raw_github_file(
+    repo: str, path: str, branch: str = "main", timeout: float = 3.5
+) -> Optional[str]:
+    url = f"https://raw.githubusercontent.com/{repo}/{branch}/{path}"
+    headers = {"User-Agent": "skill-ctl"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = Request(url, headers=headers)
     try:
         with urlopen(req, timeout=timeout) as response:
             return response.read().decode("utf-8", errors="replace")
@@ -298,31 +309,83 @@ def _fetch_raw_github_file(repo: str, path: str, timeout: float = 4.0) -> Option
         return None
 
 
+def _fetch_candidates_parallel(
+    repo: str, candidates: tuple[str, ...]
+) -> tuple[Optional[str], Optional[str]]:
+    """Fetch candidate SKILL.md paths in parallel across main, master, and HEAD branches."""
+    branches = ("main", "master", "HEAD")
+    results: dict[int, tuple[str, str]] = {}
+    done_ranks: set[int] = set()
+
+    with ThreadPoolExecutor(max_workers=min(len(candidates) * len(branches), 8)) as pool:
+        futures = {}
+        for rank, path in enumerate(candidates):
+            for branch in branches:
+                fut = pool.submit(_fetch_raw_github_file, repo, path, branch, 3.0)
+                futures[fut] = (rank, path)
+
+        for fut in as_completed(futures):
+            rank, path = futures[fut]
+            try:
+                content = fut.result()
+            except Exception:
+                content = None
+
+            if content is not None and rank not in results:
+                results[rank] = (path, content)
+                done_ranks.add(rank)
+
+            rank_futures = [f for f, (r, _) in futures.items() if r == rank]
+            if all(f.done() for f in rank_futures):
+                done_ranks.add(rank)
+
+            if results:
+                best_rank = min(results.keys())
+                if all(r in done_ranks for r in range(best_rank)):
+                    for f in futures:
+                        if not f.done():
+                            f.cancel()
+                    return results[best_rank]
+
+    if results:
+        best_rank = min(results.keys())
+        return results[best_rank]
+    return None, None
+
+
 def frontmatter(source: str, skill_name: str) -> dict:
     repo = github_source(source)
     if not repo:
         return {}
 
-    # Fast path: try standard locations directly from raw CDN before hitting
-    # the GitHub recursive trees API (which has strict 60 req/hr rate limits).
-    path = None
-    text = None
-    for candidate in (f"{skill_name}/SKILL.md", f"skills/{skill_name}/SKILL.md", "SKILL.md"):
-        content = _fetch_raw_github_file(repo, candidate)
-        if content is not None:
-            path = candidate
-            text = content
-            break
+    # Fast path: try standard locations directly from raw CDN in parallel before
+    # hitting the GitHub recursive trees API (which has strict rate limits).
+    candidates = (f"{skill_name}/SKILL.md", f"skills/{skill_name}/SKILL.md", "SKILL.md")
+    path, text = _fetch_candidates_parallel(repo, candidates)
 
     if text is None:
         try:
             tree = get_json(f"{GITHUB_API}/repos/{repo}/git/trees/HEAD?recursive=1").get("tree", [])
-            candidates = [entry["path"] for entry in tree if entry.get("type") == "blob" and (entry.get("path") == "SKILL.md" or entry.get("path", "").endswith("/SKILL.md"))]
-            exact = [p for p in candidates if p != "SKILL.md" and p.rsplit("/", 2)[-2].lower() == skill_name.lower()]
-            path = (exact or candidates)[0]
-            request = Request(f"https://raw.githubusercontent.com/{repo}/HEAD/{path}", headers={"User-Agent": "skill-ctl"})
-            with urlopen(request, timeout=10) as response:
-                text = response.read().decode("utf-8", errors="replace")
+            blob_candidates = [
+                entry["path"]
+                for entry in tree
+                if entry.get("type") == "blob"
+                and (entry.get("path") == "SKILL.md" or entry.get("path", "").endswith("/SKILL.md"))
+            ]
+            exact = [
+                p
+                for p in blob_candidates
+                if p != "SKILL.md" and p.rsplit("/", 2)[-2].lower() == skill_name.lower()
+            ]
+            if exact:
+                path = exact[0]
+            elif blob_candidates and (len(blob_candidates) == 1 or "SKILL.md" in blob_candidates):
+                path = "SKILL.md" if "SKILL.md" in blob_candidates else blob_candidates[0]
+            else:
+                return {}
+            text = _fetch_raw_github_file(repo, path, branch="HEAD", timeout=6.0)
+            if not text:
+                return {}
         except (IndexError, KeyError, OSError, URLError, ValueError):
             return {}
 
@@ -344,18 +407,30 @@ def details(skill: dict) -> dict:
     name = str(skill.get("name", ""))
     source = str(skill.get("source") or skill.get("id", ""))
     repo = github_source(source)
-    stars = None
-    if repo:
+
+    def fetch_stars() -> Optional[int]:
+        if not repo:
+            return None
         try:
-            stars = get_json(f"{GITHUB_API}/repos/{repo}").get("stargazers_count")
+            return get_json(f"{GITHUB_API}/repos/{repo}").get("stargazers_count")
         except (OSError, URLError, ValueError):
-            pass
+            return None
+
+    def fetch_meta() -> dict:
+        return frontmatter(source, name)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        stars_fut = executor.submit(fetch_stars)
+        meta_fut = executor.submit(fetch_meta)
+        stars = stars_fut.result()
+        metadata = meta_fut.result()
+
     return {
         "name": name,
         "source": source,
         "installs": format_installs(skill.get("installs")),
         "stars": stars,
-        "metadata": frontmatter(source, name),
+        "metadata": metadata,
         "url": f"{SKILLS_URL}/{skill.get('id', '')}",
     }
 
