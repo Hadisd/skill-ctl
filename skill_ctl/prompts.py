@@ -76,32 +76,56 @@ def _browse_preset_choices(
         return int(result.stdout.partition("\t")[0]) if result.returncode == 0 else None
 
 
+def prompt_apply_type() -> str:
+    console.print()
+    console.print("[dim]What would you like to apply to this project?[/dim]")
+    console.print("  [choice]1)[/choice] Specific skill(s) [dim](search & pick across all presets; default)[/dim]")
+    console.print("  [choice]2)[/choice] An entire preset [dim](apply all skills from a preset)[/dim]")
+    return _ask("[bold]Choose an option[/bold]", choices=["1", "2"], default="1")
+
+
 def prompt_preset(
-    names: list[str], target_project: Optional[Path] = None, presets_dir: Optional[Path] = None,
+    names: list[str],
+    target_project: Optional[Path] = None,
+    presets_dir: Optional[Path] = None,
+    include_all: bool = True,
+    default_name: Optional[str] = None,
 ) -> str:
     config = load_config()
+    default_choice = "0" if include_all else "1"
+    if default_name and default_name in names and not include_all:
+        default_choice = str(names.index(default_name) + 1)
+
     if _use_preset_picker(len(names), config):
+        extra = ("all presets", "Search every skill across all presets.") if include_all else ("cancel", "Cancel selection.")
         selected = _browse_preset_choices(
-            names, config, presets_dir, ("all presets", "Search every skill across all presets."),
+            names, config, presets_dir, extra, default_name,
         )
         if selected is None:
             raise SystemExit(0)
-        return ALL_PRESETS if selected == 0 else names[selected - 1]
+        if selected == 0:
+            if include_all:
+                return ALL_PRESETS
+            raise SystemExit(0)
+        return names[selected - 1]
 
-    console.print("  [header]0)[/header] [header]all presets[/header] [dim](search every skill; default)[/dim]")
+    if include_all:
+        console.print("  [header]0)[/header] [header]all presets[/header] [dim](search every skill; default)[/dim]")
     for index, name in enumerate(names, 1):
-        console.print(f"  [choice]{index})[/choice] {name}")
+        marker = " [dim]*[/dim]" if name == default_name else ""
+        console.print(f"  [choice]{index})[/choice] {name}{marker}")
     if target_project is not None:
         console.print(f"[dim]Applying to[/dim] [path]{target_project}[/path]")
     while True:
-        picked = _ask("[bold]Preset to apply[/bold]", default="0")
-        if picked == "0":
+        picked = _ask("[bold]Preset to apply[/bold]", default=default_choice)
+        if picked == "0" and include_all:
             return ALL_PRESETS
         if picked.isdigit() and 1 <= int(picked) <= len(names):
             return names[int(picked) - 1]
         if picked in names:
             return picked
-        print_warn(f"No preset '{picked}'. Pick 0, a number from 1 to {len(names)}, or a name.")
+        valid = f"0, a number from 1 to {len(names)}" if include_all else f"a number from 1 to {len(names)}"
+        print_warn(f"No preset '{picked}'. Pick {valid}, or a name.")
 
 
 def prompt_skills(names: list[str], action: str = "apply") -> list[str]:
@@ -196,5 +220,5 @@ def prompt_theme(names: list[str], current: str) -> str:
 def prompt_add_source() -> str:
     console.print("[dim]No skill package provided. What do you want to do?[/dim]")
     console.print("  [choice]1)[/choice] Find on skills.sh")
-    console.print("  [choice]2)[/choice] Pick from other presets")
+    console.print("  [choice]2)[/choice] Pick from presets")
     return _ask("[bold]Choose an option[/bold]", choices=["1", "2"], default="1")

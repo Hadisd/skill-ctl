@@ -53,6 +53,7 @@ from rich.prompt import Prompt
 from skill_ctl.constants import ALL_PRESETS
 from skill_ctl.prompts import (
     prompt_add_source,
+    prompt_apply_type,
     prompt_destination,
     prompt_new_preset_name,
     prompt_preset,

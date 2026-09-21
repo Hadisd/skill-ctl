@@ -32,7 +32,7 @@ TABLE_LIMIT = 8
 from skill_ctl.constants import ALL_PRESETS, PRESETS_DIR, CONFIG_FILE, DEFAULT_TARGETS, SELECT_INTERACTIVELY
 from skill_ctl.config import load_config, get_agent_dir_map, all_target_dirs, global_skill_dirs
 from skill_ctl.ui import console, print_header, print_success, print_warn, print_error
-from skill_ctl.prompts import prompt_new_preset_name, prompt_preset, prompt_skills
+from skill_ctl.prompts import prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
 from skill_ctl.archive import export_preset as write_archive, safe_extract_preset, preset_changes
 from skill_ctl.linker import apply_skills, links_into_preset, prune_lockfile, prune_empty_dirs, skill_kinds, owned_copies
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
@@ -638,14 +638,32 @@ def apply(
 
     interactive = sys.stdin.isatty() and config.get("prompts", {}).get("ask_apply", True)
 
+    applied_entire_preset = False
     # Which preset is always ours to ask; npx has no concept of them.
     if preset is None and interactive:
         available = sorted(d.name for d in PRESETS_DIR.iterdir() if d.is_dir()) if PRESETS_DIR.is_dir() else []
-        # What this project already uses is the likeliest answer, so offer it first.
-        if len(recorded) == 1:
-            target_preset = next(iter(recorded))
-        if len(available) > 1:
-            target_preset = prompt_preset(available, target_project, PRESETS_DIR)
+        if not available:
+            print_warn("No presets found.")
+            console.print("Create one with: [header]skctl add <package> --preset <name>[/header]")
+            return
+
+        if skill is None and not all_presets and not pick_skills:
+            apply_type = prompt_apply_type()
+            if apply_type == "1":
+                apply_across_presets(target_project, config, agent, use_copy, force, explicit_pick=True, dry_run=dry_run)
+                return
+            applied_entire_preset = True
+            default_choice = next(iter(recorded)) if len(recorded) == 1 and next(iter(recorded)) in available else None
+            if len(available) == 1:
+                target_preset = available[0]
+            else:
+                target_preset = prompt_preset(available, target_project, PRESETS_DIR, include_all=False, default_name=default_choice)
+        else:
+            # What this project already uses is the likeliest answer, so offer it first.
+            if len(recorded) == 1:
+                target_preset = next(iter(recorded))
+            if len(available) > 1:
+                target_preset = prompt_preset(available, target_project, PRESETS_DIR)
 
     # "All of them", from the preset prompt or --all-presets: the question becomes
     # which skills, across every preset at once, and each preset's share is applied
@@ -659,7 +677,7 @@ def apply(
     # Naming the preset on the command line is itself a choice: it applies every
     # skill in it with no further question, exactly like `-s` with nothing typed.
     # Only a bare `apply` (no preset named) or an explicit --pick still asks.
-    if skill is None and not npx and (pick_skills or (preset is None and interactive)):
+    if skill is None and not npx and (pick_skills or (preset is None and interactive and not applied_entire_preset)):
         skill = SELECT_INTERACTIVELY
 
     preset_dir = preset_path(target_preset)
@@ -750,11 +768,12 @@ def apply(
 def apply_across_presets(
     target_project: Path,
     config: dict,
-    agent: Optional[str],
-    use_copy: bool,
-    force: bool,
-    explicit_pick: bool,
+    agent: Optional[str] = None,
+    use_copy: bool = False,
+    force: bool = False,
+    explicit_pick: bool = True,
     dry_run: bool = False,
+    skill: Optional[str] = None,
 ) -> None:
     """Choose skills from every preset at once, then apply each preset's share.
 
@@ -770,14 +789,39 @@ def apply_across_presets(
         console.print("Add one with: [header]skctl add <package> --preset <name>[/header]")
         return
 
-    print_header(f"{len(rows)} skills across {len({row['preset'] for row in rows})} presets")
-    header = (
-        f"\x1b[1;36mAll presets\x1b[0m\n"
-        f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{target_project}\x1b[0m\n"
-        f"{DEFAULT_HEADER}"
-    )
-    chosen = pick(rows, header=header) if wants_picker(config, explicit_pick) \
-        else pick_from_labels(rows)
+    if skill:
+        wanted = {s.strip() for s in skill.split(",") if s.strip()}
+        matched_rows = [row for row in rows if row["skill"] in wanted]
+        if not matched_rows:
+            print_warn(f"Skill '{skill}' not found in any preset.")
+            return
+        if len(matched_rows) == len(wanted):
+            chosen = matched_rows
+        elif sys.stdin.isatty() and wants_picker(config, explicit_pick):
+            header = (
+                f"\x1b[1;36mAll presets\x1b[0m\n"
+                f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{target_project}\x1b[0m\n"
+                f"{DEFAULT_HEADER}"
+            )
+            chosen = pick(matched_rows, header=header)
+        elif sys.stdin.isatty():
+            chosen = pick_from_labels(matched_rows)
+        else:
+            seen = set()
+            chosen = []
+            for row in matched_rows:
+                if row["skill"] not in seen:
+                    seen.add(row["skill"])
+                    chosen.append(row)
+    else:
+        print_header(f"{len(rows)} skills across {len({row['preset'] for row in rows})} presets")
+        header = (
+            f"\x1b[1;36mAll presets\x1b[0m\n"
+            f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{target_project}\x1b[0m\n"
+            f"{DEFAULT_HEADER}"
+        )
+        chosen = pick(rows, header=header) if wants_picker(config, explicit_pick) \
+            else pick_from_labels(rows)
     if not chosen:
         print_warn("Nothing picked.")
         return
@@ -893,6 +937,100 @@ def add_installed_to_preset(
         names = ", ".join(sorted({row["skill"] for row in chosen}))
         print_success(f"Added {added} skill{'s' if added != 1 else ''} to '{name}': {names}")
     return added
+
+
+def add_installed_to_global(
+    config: dict,
+    agent: Optional[str] = None,
+    use_copy: bool = False,
+    force: bool = False,
+    skill: Optional[str] = None,
+    warn_empty: bool = True,
+) -> int:
+    """Pick skills from presets and link/copy them into global agent directories."""
+    rows = []
+    for directory in sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir()) if PRESETS_DIR.is_dir() else []:
+        rows.extend(rows_for(directory.name, get_preset_skills(directory)))
+    if not rows:
+        if warn_empty:
+            print_warn("No skills in any preset yet.")
+            console.print("Add one with: [header]skctl add <package> --preset <name>[/header]")
+        return 0
+
+    if skill:
+        wanted = {s.strip() for s in skill.split(",") if s.strip()}
+        matched_rows = [row for row in rows if row["skill"] in wanted]
+        if not matched_rows:
+            print_warn(f"Skill '{skill}' not found in any preset.")
+            return 0
+        if len(matched_rows) == len(wanted):
+            chosen = matched_rows
+        elif sys.stdin.isatty() and wants_picker(config):
+            header = (
+                f"\x1b[1;36mAll presets\x1b[0m\n"
+                f"\x1b[2mAdding to\x1b[0m  \x1b[2;32mGlobal\x1b[0m\n"
+                f"{DEFAULT_HEADER}"
+            )
+            chosen = pick(matched_rows, header=header)
+        elif sys.stdin.isatty():
+            chosen = pick_from_labels(matched_rows)
+        else:
+            seen = set()
+            chosen = []
+            for row in matched_rows:
+                if row["skill"] not in seen:
+                    seen.add(row["skill"])
+                    chosen.append(row)
+    else:
+        if not sys.stdin.isatty():
+            print_error("Interactive skill selection requires a terminal.")
+            return 0
+        print_header(f"{len(rows)} skills across {len({row['preset'] for row in rows})} presets")
+        header = (
+            f"\x1b[1;36mAll presets\x1b[0m\n"
+            f"\x1b[2mAdding to\x1b[0m  \x1b[2;32mGlobal\x1b[0m\n"
+            f"{DEFAULT_HEADER}"
+        )
+        chosen = pick(rows, header=header) if wants_picker(config) else pick_from_labels(rows)
+
+    if not chosen:
+        print_warn("Nothing picked.")
+        return 0
+
+    seen: dict[str, dict] = {}
+    duplicates = []
+    for row in chosen:
+        name = row["skill"]
+        if name in seen:
+            duplicates.append((name, seen[name]["preset"], row["preset"]))
+        seen[name] = row
+    if duplicates:
+        for name, p1, p2 in duplicates:
+            print_warn(f"Multiple versions of '{name}' chosen ({p1}, {p2}); using '{p2}'.")
+
+    skills = {name: Path(row["path"]) for name, row in seen.items()}
+
+    agent_map = get_agent_dir_map(config)
+    if agent in ("*", "all"):
+        dest_rel_dirs = list(dict.fromkeys(agent_map.values()))
+    elif agent:
+        dest_rel_dirs = [agent_map.get(agent, f".{agent}/skills")]
+    elif config.get("default_agents"):
+        dest_rel_dirs = list(dict.fromkeys(agent_map.get(a, f".{a}/skills") for a in config["default_agents"]))
+    else:
+        from skill_ctl.runner import get_detected_global_agents
+        dest_rel_dirs = list(dict.fromkeys(agent_map.get(a, f".{a}/skills") for a in get_detected_global_agents()))
+
+    target_project = Path.home()
+    copy_mode = use_copy or (config.get("apply_mode") == "copy")
+    result = apply_skills(target_project, skills, dest_rel_dirs, copy_mode, force=force)
+    for path in result.kept:
+        print_warn(f"Kept existing ~/{path} (not a link; --force replaces it)")
+    verb = "Copied" if result.copied else "Linked"
+    dest_labels = [f"~/{d}" for d in dest_rel_dirs]
+    if result.applied:
+        print_success(f"{verb} {len(result.applied)} skill{'s' if len(result.applied) != 1 else ''} into {', '.join(dest_labels)}")
+    return len(result.applied)
 
 
 def offer_add_after_create(name: str, preset_dir: Path, config: dict) -> None:

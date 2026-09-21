@@ -13,7 +13,14 @@ from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
 from skill_ctl.ui import console, print_header, print_error, print_warn
 from skill_ctl.prompts import prompt_add_source, prompt_destination, prompt_skills
 from skill_ctl.runner import run_npx_skills, get_detected_global_agents
-from skill_ctl.presets import add_installed_to_preset, ensure_preset_dir, get_preset_skills, preset_path
+from skill_ctl.presets import (
+    add_installed_to_global,
+    add_installed_to_preset,
+    apply_across_presets,
+    ensure_preset_dir,
+    get_preset_skills,
+    preset_path,
+)
 from skill_ctl.backup import maybe_auto_push
 
 def add(
@@ -46,6 +53,10 @@ def add(
         bool,
         typer.Option("--copy", "-c", help="Copy files instead of symlinking.")
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Force overwrite existing skill directories.")
+    ] = False,
     all_skills: Annotated[
         bool,
         typer.Option("--all", help="Shorthand for --skill '*' --agent '*' -y.")
@@ -60,7 +71,7 @@ def add(
     ] = False,
 ) -> None:
     """Add a skill package using npx skills (skills.sh). Can target a preset, project, or global."""
-    if package is None and not sys.stdin.isatty():
+    if package is None and skill is None and not sys.stdin.isatty():
         print_error("Choosing a skill requires a terminal or a package name.")
         sys.exit(1)
 
@@ -70,7 +81,7 @@ def add(
     default_preset_name = config.get("default_preset", "default")
     # `add --preset <name>` has always meant “pick from installed skills”; only a
     # bare `add` needs help choosing between that and the remote catalog.
-    add_source = prompt_add_source() if package is None and preset is None else "2"
+    add_source = prompt_add_source() if package is None and preset is None and sys.stdin.isatty() else "2"
 
     # If no destination flag was provided, determine target from config or prompt
     if preset is None and not global_install and project is None:
@@ -91,14 +102,34 @@ def add(
 
     if package is None:
         if add_source == "1":
-            find(preset=preset, global_install=global_install)
+            find(preset=preset, project=project, global_install=global_install)
             return
-        if not preset:
-            print_error("Skills from other presets can only be added to a preset.")
-            sys.exit(1)
-        preset_dir = ensure_preset_dir(preset)
-        if add_installed_to_preset(preset, preset_dir, config):
-            maybe_auto_push(f"add installed skills to {preset}")
+        if project:
+            target_project = Path(project).expanduser().resolve()
+            apply_across_presets(
+                target_project,
+                config,
+                agent=agent,
+                use_copy=copy,
+                force=force,
+                explicit_pick=True,
+                skill=skill,
+            )
+            return
+        if global_install:
+            add_installed_to_global(
+                config,
+                agent=agent,
+                use_copy=copy,
+                force=force,
+                skill=skill,
+            )
+            return
+        if preset:
+            preset_dir = ensure_preset_dir(preset)
+            if add_installed_to_preset(preset, preset_dir, config):
+                maybe_auto_push(f"add installed skills to {preset}")
+            return
         return
 
     npx_args = [package]
@@ -383,6 +414,10 @@ def find(
         bool,
         typer.Option("--npx", help="Use npx skills' own interactive finder instead of skctl's fzf picker.")
     ] = False,
+    project: Annotated[
+        Optional[str],
+        typer.Option("--project", "-p", help="Target project directory.")
+    ] = None,
 ) -> None:
     """Search skills.sh with skctl's picker.
 
@@ -413,7 +448,7 @@ def find(
             print_error("The selected skills.sh results have no installable source.")
             sys.exit(1)
 
-        target = ensure_preset_dir(preset) if preset else Path.cwd()
+        target = ensure_preset_dir(preset) if preset else (Path(project).expanduser().resolve() if project else Path.cwd())
         installed: list[str] = []
         exit_code = 0
         for source, names in by_source.items():
