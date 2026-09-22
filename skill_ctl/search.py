@@ -10,6 +10,7 @@ from typing import Annotated, Optional
 
 import typer
 
+from skill_ctl.backup import maybe_auto_push
 from skill_ctl.config import load_config
 from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for
