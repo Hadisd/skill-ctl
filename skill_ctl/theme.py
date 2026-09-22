@@ -24,13 +24,13 @@ from rich.theme import Theme
 
 THEMES: dict[str, dict[str, str]] = {
     "default": {
-        "header": "bold cyan",
-        "accent": "cyan",
-        "choice": "bold blue",
-        "success": "bold green",
-        "warn": "bold yellow",
-        "error": "bold red",
-        "path": "green",
+        "header": "bold bright_cyan",
+        "accent": "bright_cyan",
+        "choice": "bold bright_blue",
+        "success": "bold bright_green",
+        "warn": "bold bright_yellow",
+        "error": "bold bright_red",
+        "path": "bright_green",
     },
     "dark": {
         "header": "bold bright_magenta",
@@ -42,13 +42,13 @@ THEMES: dict[str, dict[str, str]] = {
         "path": "bright_green",
     },
     "light": {
-        "header": "bold blue",
-        "accent": "blue",
-        "choice": "bold cyan",
-        "success": "bold dark_green",
-        "warn": "bold dark_orange",
-        "error": "bold dark_red",
-        "path": "dark_green",
+        "header": "bold #8839ef",   # mauve (Catppuccin Latte)
+        "accent": "#1e66f5",        # blue
+        "choice": "bold #209fb5",   # sapphire
+        "success": "bold #40a02b",  # green
+        "warn": "bold #df8e1d",     # yellow
+        "error": "bold #d20f39",    # red
+        "path": "#179299",          # teal
     },
     "mono": {
         "header": "bold",
@@ -189,14 +189,13 @@ def _ansi_prefix(style: str) -> str:
 
 
 # bat ships these built in, so no need to check `bat --list-themes` first.
-# Nord matches the default cyan/blue/green palette; tokyo-night also maps to Nord.
 BAT_THEMES: dict[str, str] = {
-    "default": "Nord",
+    "default": "Monokai Extended Origin",
     "dark": "Dracula",
-    "light": "GitHub",
+    "light": "Catppuccin Latte",
     "mono": "ansi",
     "catppuccin-mocha": "Catppuccin Mocha",
-    "tokyo-night": "Nord",
+    "tokyo-night": "TwoDark",
     "gruvbox": "gruvbox-dark",
 }
 
