@@ -1,11 +1,10 @@
-"""Searching the skills you already have, across presets and global folders.
+"""Search skills across presets, global folders, and the remote skills.sh catalog."""
 
-`find` asks skills.sh what exists; this asks your own presets what you have, which
-is the question after a few dozen skills have piled up in half a dozen presets.
-"""
 
 import json as jsonlib
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -14,9 +13,17 @@ import typer
 from skill_ctl.config import load_config
 from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for
-from skill_ctl.presets import apply as apply_preset, get_global_skills, get_preset_skills, preset_path
+from skill_ctl.presets import (
+    add_installed_to_global,
+    apply as apply_preset,
+    ensure_preset_dir,
+    get_global_skills,
+    get_preset_skills,
+    preset_path,
+)
 from skill_ctl.registry import presets_for
-from skill_ctl.ui import console, print_error, print_header, print_warn
+from skill_ctl.runner import run_npx_skills
+from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
 
 
 def is_subsequence(term: str, text: str) -> bool:
@@ -40,12 +47,6 @@ def match_span(term: str, text: str) -> Optional[int]:
     return end - start + 1
 
 
-def is_subsequence(term: str, text: str) -> bool:
-    """True if every character of term appears in text, in order but not adjacent."""
-    it = iter(text)
-    return all(char in it for char in term)
-
-
 def term_score(term: str, name: str, description: str) -> Optional[float]:
     """How well one query term matches, lowest first. None means it does not.
 
@@ -61,7 +62,6 @@ def term_score(term: str, name: str, description: str) -> Optional[float]:
     if term in description:
         return 3.0
     return None
-
 
 
 def collect(preset: Optional[str], global_only: bool = False) -> list:
@@ -111,10 +111,10 @@ def apply_picked(chosen: list, project: Optional[str]) -> None:
 
 
 def search(
-    query: Annotated[Optional[str], typer.Argument()] = None,
+    query: Annotated[Optional[str], typer.Argument(help="Search term (skill name, keyword, or description).")] = None,
     preset: Annotated[
         Optional[str],
-        typer.Option("--preset", "-P", help="Search only this preset.")
+        typer.Option("--preset", "-P", help="Filter by preset, or install picked skills into this preset.")
     ] = None,
     project: Annotated[
         Optional[str],
@@ -126,7 +126,23 @@ def search(
     ] = False,
     global_only: Annotated[
         bool,
-        typer.Option("--global", "-g", help="Search only configured global skill folders.")
+        typer.Option("--global", "-g", help="Search only configured global skill folders (or install globally).")
+    ] = False,
+    local_only: Annotated[
+        bool,
+        typer.Option("--local", "-l", help="Only search local presets and global folders.")
+    ] = False,
+    remote_only: Annotated[
+        bool,
+        typer.Option("--remote", "-r", help="Only search skills.sh remote catalog.")
+    ] = False,
+    owner: Annotated[
+        Optional[str],
+        typer.Option("--owner", help="Search only repositories from a GitHub owner (remote catalog).")
+    ] = None,
+    npx: Annotated[
+        bool,
+        typer.Option("--npx", help="Use npx skills' own interactive finder.")
     ] = False,
     json_output: Annotated[
         bool,
@@ -137,51 +153,103 @@ def search(
         typer.Option("--pick", "-i", help="Deprecated; search is already interactive.")
     ] = False,
 ) -> None:
-    """Search installed preset and global skills by name and description.
+    """Search installed preset, global, and skills.sh remote skills.
 
-    Opens fzf with each SKILL.md in a preview pane and applies what you select.
-    A query starts fzf with those words entered. --json prints the results
-    instead.
-
-    `skctl find` searches skills.sh for skills you do not have yet.
+    Opens an interactive picker showing matching local and remote skills.
+    Applying or installing what you select routes to the target project, preset,
+    or global folders.
     """
-    rows = collect(preset, global_only)
+    if npx:
+        args = ["find"]
+        if query:
+            args.append(query)
+        sys.exit(run_npx_skills(args))
+
+    if local_only and remote_only:
+        print_error("--local and --remote select different sources. Pick one.")
+        sys.exit(1)
+
+    if remote_only:
+        if json_output:
+            from skill_ctl.catalog import search as catalog_search
+            results = catalog_search(query or "", owner=owner)
+            print(jsonlib.dumps(results, indent=2))
+            return
+
+        if not sys.stdin.isatty():
+            print_error("skctl search is interactive; run it in a terminal or use --json.")
+            sys.exit(1)
+
+        from skill_ctl.catalog import choose as choose_catalog_skill, inspect as inspect_catalog_skill
+
+        selected = choose_catalog_skill(query or "", owner)
+        if not selected or not inspect_catalog_skill(selected):
+            return
+
+        by_source: dict[str, list[str]] = {}
+        for skill in selected:
+            source = str(skill.get("source") or skill.get("id", ""))
+            name = str(skill.get("name", ""))
+            if source:
+                by_source.setdefault(source, []).append("*" if skill.get("_all_from_source") else name)
+        if not by_source:
+            print_error("The selected skills.sh results have no installable source.")
+            sys.exit(1)
+
+        target = ensure_preset_dir(preset) if preset else (Path(project).expanduser().resolve() if project else Path.cwd())
+        installed: list[str] = []
+        exit_code = 0
+        for source, names in by_source.items():
+            args = ["add", source]
+            if "*" not in names:
+                for name in names:
+                    args.extend(["--skill", name])
+            if global_only:
+                args.append("-g")
+            code = run_npx_skills(args, cwd=str(target))
+            if code == 0:
+                installed.extend(names)
+            else:
+                exit_code = code
+        if installed and preset:
+            maybe_auto_push(f"add {', '.join(installed)} to {preset}")
+        if exit_code != 0:
+            sys.exit(exit_code)
+        return
 
     terms = (query or "").lower().split()
+    target_project = Path(project).expanduser().resolve() if project else Path.cwd()
+
+    local_rows = collect(preset, global_only)
     if terms:
         scored = []
-        for row in rows:
+        for row in local_rows:
             name = f"{row['skill']} {row['name']}".lower()
-            description = row["description"].lower()
+            description = row.get("description", "").lower()
             scores = [term_score(term, name, description) for term in terms]
-            # Every term has to match something, as with fzf's own AND semantics.
             if all(score is not None for score in scores):
                 row["score"] = sum(scores)
                 scored.append(row)
-        rows = scored
+        local_rows = scored
 
-    target_project = Path(project).expanduser().resolve() if project else Path.cwd()
     here = presets_for(target_project)
-    for row in rows:
+    for row in local_rows:
         entry = here.get(row["preset"]) or {} if row.get("scope") == "preset" else {}
         row["applied"] = row.get("scope") == "global" or row["skill"] in entry.get("skills", [])
+        row["source_type"] = "local"
     if applied:
-        rows = [row for row in rows if row["applied"]]
+        local_rows = [row for row in local_rows if row.get("applied")]
 
-    # What matched decides the order: the name exactly, the name fuzzily, then only
-    # the description. Matching is blunt enough that "ai" is inside "ponytail", so
-    # the ranking is what keeps the row you meant at the top - and the top row is
-    # what the footer offers to apply.
-    rows.sort(key=lambda row: (row.get("score", 0.0), row["skill"], row["preset"]))
+    local_rows.sort(key=lambda row: (row.get("score", 0.0), row["skill"], row["preset"]))
 
     if json_output:
-        print(jsonlib.dumps(rows, indent=2))
+        print(jsonlib.dumps(local_rows, indent=2))
         return
 
-    if not rows:
+    if not local_rows:
         where = "global folders" if global_only else (f"preset '{preset}'" if preset else "your presets and global folders")
         print_warn(f"Nothing in {where} matches {query!r}." if terms else f"No skills in {where} yet.")
-        console.print("Search skills.sh for new ones with: [header]skctl find <query>[/header]")
+        console.print("Search skills.sh for new ones with: [header]skctl search --remote <query>[/header]")
         return
 
     if not sys.stdin.isatty() and not pick_and_apply:
@@ -192,8 +260,21 @@ def search(
         f"\x1b[1;36mSearch skills\x1b[0m  →  \x1b[2;32m{target_project}\x1b[0m\n"
         f"{DEFAULT_HEADER}"
     )
-    chosen = pick(rows, header=header, query=query or "")
+    chosen = pick(local_rows, header=header, query=query or "")
     if not chosen:
         print_warn("Nothing picked.")
         return
-    apply_picked(chosen, project)
+
+    if preset:
+        preset_dir = ensure_preset_dir(preset)
+        for r in chosen:
+            src = Path(r["path"])
+            dst = preset_dir / ".agents" / "skills" / r["skill"]
+            if not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src, dst)
+        print_success(f"Added {len(chosen)} local skill{'s' if len(chosen) != 1 else ''} to preset '{preset}'")
+    elif global_only:
+        add_installed_to_global(load_config(), skill=",".join(r["skill"] for r in chosen))
+    else:
+        apply_picked(chosen, project=str(target_project))

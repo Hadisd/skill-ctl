@@ -32,7 +32,7 @@ TABLE_LIMIT = 8
 from skill_ctl.constants import ALL_PRESETS, PRESETS_DIR, CONFIG_FILE, DEFAULT_TARGETS, SELECT_INTERACTIVELY
 from skill_ctl.config import load_config, get_agent_dir_map, all_target_dirs, global_skill_dirs
 from skill_ctl.ui import console, print_header, print_success, print_warn, print_error
-from skill_ctl.prompts import prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
+from skill_ctl.prompts import prompt_apply_destination, prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
 from skill_ctl.archive import export_preset as write_archive, safe_extract_preset, preset_changes
 from skill_ctl.linker import apply_skills, links_into_preset, prune_lockfile, prune_empty_dirs, skill_kinds, owned_copies
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
@@ -584,6 +584,10 @@ def apply(
         Optional[str],
         typer.Option("--project", "-p", help="Target project directory (default: current directory).")
     ] = None,
+    global_apply: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Apply skills globally to user agent directories (~/.agents/skills, ~/.claude/skills, ...).")
+    ] = False,
     skill: Annotated[
         Optional[str],
         typer.Option("--skill", "-s", help="Only apply these skills (comma-separated). Omit it to pick from a list.")
@@ -612,8 +616,12 @@ def apply(
         bool,
         typer.Option("--all-presets", "-A", help="Choose from every preset's skills at once.")
     ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt.")
+    ] = False,
 ) -> None:
-    """Link preset skills into the project's agent directories.
+    """Link preset skills into the project's agent directories or globally.
 
     Symlinks by default, so the project follows later edits to the preset. A
     skill directory that is neither a link nor a copy this preset made is left
@@ -626,7 +634,17 @@ def apply(
     config = load_config()
     target_preset = preset or config.get("default_preset", "default")
     use_copy = copy or (config.get("apply_mode") == "copy")
-    target_project = Path(project).expanduser().resolve() if project else Path.cwd()
+
+    if global_apply:
+        target_project = Path.home()
+        is_global = True
+    elif project:
+        target_project = Path(project).expanduser().resolve()
+        is_global = False
+    else:
+        target_project = Path.cwd()
+        is_global = False
+
     recorded = (
         read_project_file(target_project) or load_applied().get(str(target_project), {})
         if dry_run else presets_for(target_project)
@@ -637,6 +655,14 @@ def apply(
         return
 
     interactive = sys.stdin.isatty() and config.get("prompts", {}).get("ask_apply", True)
+
+    if not project and not global_apply and interactive and preset is None and not resync:
+        dest_choice = prompt_apply_destination(target_project)
+        if dest_choice == "2":
+            target_project = Path.home()
+            is_global = True
+            global_apply = True
+            recorded = load_applied().get(str(target_project), {}) if dry_run else presets_for(target_project)
 
     applied_entire_preset = False
     # Which preset is always ours to ask; npx has no concept of them.
@@ -650,7 +676,7 @@ def apply(
         if skill is None and not all_presets and not pick_skills:
             apply_type = prompt_apply_type()
             if apply_type == "1":
-                apply_across_presets(target_project, config, agent, use_copy, force, explicit_pick=True, dry_run=dry_run)
+                apply_across_presets(target_project, config, agent, use_copy, force, explicit_pick=True, dry_run=dry_run, global_apply=is_global, yes=yes)
                 return
             applied_entire_preset = True
             default_choice = next(iter(recorded)) if len(recorded) == 1 and next(iter(recorded)) in available else None
@@ -669,7 +695,7 @@ def apply(
     # which skills, across every preset at once, and each preset's share is applied
     # by an ordinary apply.
     if target_preset == ALL_PRESETS or (all_presets and preset is None):
-        apply_across_presets(target_project, config, agent, use_copy, force, pick_skills, dry_run)
+        apply_across_presets(target_project, config, agent, use_copy, force, pick_skills, dry_run, global_apply=is_global, yes=yes)
         return
 
     # Which skills is ours only for the symlink path. With --npx the selection is
@@ -714,11 +740,24 @@ def apply(
         sys.exit(1)
     skills = {name: skills[name] for name in chosen}
 
+    if not yes and sys.stdin.isatty() and not dry_run:
+        is_home = is_global or target_project == Path.home()
+        dest_label = "Global (~/)" if is_home else str(target_project)
+        skill_count = len(skills)
+        if skill_count <= 4:
+            names_str = ", ".join(sorted(skills.keys()))
+            prompt_msg = f"Apply preset '{target_preset}' ({names_str}) to {dest_label}?"
+        else:
+            prompt_msg = f"Apply preset '{target_preset}' ({skill_count} skills) to {dest_label}?"
+        try:
+            confirmed = Confirm.ask(prompt_msg, default=True, console=console)
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+        if not confirmed:
+            return
+
     if npx:
-        # Point npx at the directory that holds the skill folders, never at the
-        # preset root: `npx skills add` ignores skills listed in a skills-lock.json
-        # sitting beside them, and every preset has one naming exactly those skills.
-        # Names must be passed as repeated --skill flags; a comma list matches nothing.
         filter_skills = skill is not None  # no -s means "let npx ask"
         if dry_run:
             print_header(f"Dry run: installing from '{target_preset}' via npx skills")
@@ -729,6 +768,8 @@ def apply(
                         args.extend(["--skill", name])
                 if agent:
                     args.extend(["--agent", "*" if agent == "all" else agent])
+                if is_global:
+                    args.append("-g")
                 if use_copy:
                     args.append("--copy")
                 console.print(f"  Would run: npx skills {' '.join(shlex.quote(arg) for arg in args)}")
@@ -743,6 +784,8 @@ def apply(
                     args.extend(["--skill", name])
             if agent:
                 args.extend(["--agent", "*" if agent == "all" else agent])
+            if is_global:
+                args.append("-g")
             if use_copy:
                 args.append("--copy")
             print_header(f"Installing from '{target_preset}' via npx skills ({source})")
@@ -751,12 +794,23 @@ def apply(
         sys.exit(code)
 
     agent_map = get_agent_dir_map(config)
-    if agent in ("*", "all"):
-        dest_rel_dirs = list(dict.fromkeys(agent_map.values()))
-    elif agent:
-        dest_rel_dirs = [agent_map.get(agent, f".{agent}/skills")]
+    if is_global or target_project == Path.home():
+        if agent in ("*", "all"):
+            dest_rel_dirs = list(dict.fromkeys(agent_map.values()))
+        elif agent:
+            dest_rel_dirs = [agent_map.get(agent, f".{agent}/skills")]
+        elif config.get("default_agents"):
+            dest_rel_dirs = list(dict.fromkeys(agent_map.get(a, f".{a}/skills") for a in config["default_agents"]))
+        else:
+            from skill_ctl.runner import get_detected_global_agents
+            dest_rel_dirs = list(dict.fromkeys(agent_map.get(a, f".{a}/skills") for a in get_detected_global_agents()))
     else:
-        dest_rel_dirs = config.get("apply_targets", DEFAULT_TARGETS)
+        if agent in ("*", "all"):
+            dest_rel_dirs = list(dict.fromkeys(agent_map.values()))
+        elif agent:
+            dest_rel_dirs = [agent_map.get(agent, f".{agent}/skills")]
+        else:
+            dest_rel_dirs = config.get("apply_targets", DEFAULT_TARGETS)
 
     owned = owned_copies(recorded, target_preset)
     if dry_run:
@@ -774,6 +828,8 @@ def apply_across_presets(
     explicit_pick: bool = True,
     dry_run: bool = False,
     skill: Optional[str] = None,
+    global_apply: bool = False,
+    yes: bool = False,
 ) -> None:
     """Choose skills from every preset at once, then apply each preset's share.
 
@@ -789,6 +845,9 @@ def apply_across_presets(
         console.print("Add one with: [header]skctl add <package> --preset <name>[/header]")
         return
 
+    is_home = global_apply or target_project == Path.home()
+    dest_label = "Global (~/)" if is_home else str(target_project)
+
     if skill:
         wanted = {s.strip() for s in skill.split(",") if s.strip()}
         matched_rows = [row for row in rows if row["skill"] in wanted]
@@ -800,7 +859,7 @@ def apply_across_presets(
         elif sys.stdin.isatty() and wants_picker(config, explicit_pick):
             header = (
                 f"\x1b[1;36mAll presets\x1b[0m\n"
-                f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{target_project}\x1b[0m\n"
+                f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{dest_label}\x1b[0m\n"
                 f"{DEFAULT_HEADER}"
             )
             chosen = pick(matched_rows, header=header)
@@ -817,7 +876,7 @@ def apply_across_presets(
         print_header(f"{len(rows)} skills across {len({row['preset'] for row in rows})} presets")
         header = (
             f"\x1b[1;36mAll presets\x1b[0m\n"
-            f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{target_project}\x1b[0m\n"
+            f"\x1b[2mApplying to\x1b[0m  \x1b[2;32m{dest_label}\x1b[0m\n"
             f"{DEFAULT_HEADER}"
         )
         chosen = pick(rows, header=header) if wants_picker(config, explicit_pick) \
@@ -829,10 +888,23 @@ def apply_across_presets(
     by_preset = {}
     for row in chosen:
         by_preset.setdefault(row["preset"], []).append(row["skill"])
+
+    if not yes and sys.stdin.isatty() and not dry_run:
+        prompt_msg = f"Apply {len(chosen)} skill{'s' if len(chosen) != 1 else ''} across {len(by_preset)} preset{'s' if len(by_preset) != 1 else ''} to {dest_label}?"
+        try:
+            confirmed = Confirm.ask(prompt_msg, default=True, console=console)
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+        if not confirmed:
+            return
+
     for preset, names in sorted(by_preset.items()):
         apply(
-            preset=preset, skill=",".join(sorted(names)), project=str(target_project),
-            agent=agent, copy=use_copy, force=force, dry_run=dry_run,
+            preset=preset, skill=",".join(sorted(names)),
+            project=str(target_project) if not is_home else None,
+            global_apply=is_home,
+            agent=agent, copy=use_copy, force=force, dry_run=dry_run, yes=True,
         )
 
 
@@ -841,6 +913,282 @@ def pick_from_labels(rows: list) -> list:
     labels = [f"{row.get('location', row['preset'])}/{row['skill']}" for row in rows]
     chosen = set(prompt_skills(labels))
     return [row for row, label in zip(rows, labels) if label in chosen]
+
+
+def install_skills_into_preset(name: str, preset_dir: Path, rows: list[dict]) -> int:
+    """Install or copy candidate skill rows into a preset directory."""
+    if not rows:
+        return 0
+    added = 0
+    pending = list(rows)
+    lock = read_global_lock()
+    tracked = {}
+    for row in rows:
+        entry = lock.get(row["skill"]) if row.get("scope") == "global" else None
+        source = entry.get("source") if isinstance(entry, dict) else None
+        if isinstance(source, str) and source:
+            tracked.setdefault(source, []).append(row)
+
+    # Reinstall tracked globals through upstream so the new preset receives its
+    # own skills-lock.json and `skctl update --preset` can update them later.
+    for source, source_rows in tracked.items():
+        args = ["add", source]
+        for row in source_rows:
+            args.extend(["--skill", row["skill"]])
+        args.extend(["--agent", "universal", "-y"])
+        if run_npx_skills(args, cwd=str(preset_dir)) == 0:
+            installed = {
+                row["skill"] for row in source_rows
+                if (preset_dir / ".agents" / "skills" / row["skill"]).is_dir()
+            }
+            added += len(installed)
+            pending = [row for row in pending if row not in source_rows or row["skill"] not in installed]
+        else:
+            print_warn(f"Could not reinstall skills from {source}; copying them instead.")
+
+    copied_without_lock = []
+    for row in pending:
+        dst = preset_dir / ".agents" / "skills" / row["skill"]
+        if dst.exists():
+            print_warn(f"Skipping {row['skill']} (already in '{name}')")
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(row["path"], dst)
+        added += 1
+        if row.get("scope") == "global":
+            copied_without_lock.append(row["skill"])
+
+    if copied_without_lock:
+        print_warn(
+            "Copied global skills without update metadata; `update --preset` cannot update: "
+            + ", ".join(sorted(copied_without_lock))
+        )
+    if added:
+        names = ", ".join(sorted({row["skill"] for row in rows}))
+        print_success(f"Added {added} skill{'s' if added != 1 else ''} to '{name}': {names}")
+    return added
+
+
+def remove_skills_from_preset(preset_dir: Path, skill_names: Iterable[str]) -> list[str]:
+    """Remove named skills from a preset directory and update its lockfile."""
+    removed = []
+    names_set = set(skill_names)
+    for skill_name in names_set:
+        found = False
+        for pattern in (f"*/skills/{skill_name}", f"*/*/skills/{skill_name}", f"skills/{skill_name}", skill_name):
+            for path in list(preset_dir.glob(pattern)):
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                    found = True
+                    prune_empty_dirs(path.parent, preset_dir)
+                elif path.is_symlink() or path.is_file():
+                    path.unlink()
+                    found = True
+                    prune_empty_dirs(path.parent, preset_dir)
+        if found:
+            removed.append(skill_name)
+    prune_lockfile(preset_dir, names_set)
+    return sorted(set(removed))
+
+
+def _dual_list_toggle_preset(name: str, preset_dir: Path, config: dict) -> None:
+    """Interactive toggle of preset skills alongside all available skills."""
+    current_skills = get_preset_skills(preset_dir)
+
+    candidates = []
+    # Add skills currently in the preset first
+    candidates.extend(rows_for(name, current_skills, scope="preset"))
+    for row in candidates:
+        row["location"] = f"in:{name}"
+
+    # Add other installed skills from other presets and global folders
+    seen = {row["skill"] for row in candidates}
+    for other in sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir() and d != preset_dir):
+        for row in rows_for(other.name, get_preset_skills(other)):
+            if row["skill"] not in seen:
+                row["location"] = f"from:{other.name}"
+                candidates.append(row)
+                seen.add(row["skill"])
+
+    for row in get_global_skills(config):
+        if row["skill"] not in seen:
+            candidates.append(row)
+            seen.add(row["skill"])
+
+    if not candidates:
+        print_warn("No skills found in presets or global folders.")
+        return
+
+    header = (
+        f"Editing preset '{name}' · {len(current_skills)} current skills\n"
+        "Tab select skills to KEEP or ADD · Deselected in-preset skills are REMOVED · Enter apply"
+    )
+
+    if wants_picker(config):
+        chosen = pick(candidates, header=header)
+    else:
+        labels = [f"{row.get('location', row['preset'])}/{row['skill']}" for row in candidates]
+        chosen_labels = set(prompt_skills(labels, action="save"))
+        chosen = [row for row, label in zip(candidates, labels) if label in chosen_labels]
+
+    if not chosen:
+        print_warn("Nothing selected; no changes made.")
+        return
+
+    chosen_skills = {row["skill"] for row in chosen}
+    to_add = [row for row in chosen if row["skill"] not in current_skills]
+    to_remove = [skill for skill in current_skills if skill not in chosen_skills]
+
+    if not to_add and not to_remove:
+        print_warn("No changes to apply.")
+        return
+
+    console.print()
+    print_header(f"Preset '{name}' changes:")
+    if to_add:
+        console.print(f"  [choice]+ Add ({len(to_add)}):[/choice] {', '.join(r['skill'] for r in to_add)}")
+    if to_remove:
+        console.print(f"  [error]- Remove ({len(to_remove)}):[/error] {', '.join(to_remove)}")
+
+    try:
+        if not Confirm.ask("Apply these changes to preset?", default=True, console=console):
+            return
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return
+
+    if to_remove:
+        removed_list = remove_skills_from_preset(preset_dir, to_remove)
+        print_success(f"Removed {len(removed_list)} skill{'s' if len(removed_list) != 1 else ''} from '{name}': {', '.join(removed_list)}")
+
+    if to_add:
+        install_skills_into_preset(name, preset_dir, to_add)
+
+    maybe_auto_push(f"edit preset {name}: sync skills")
+
+
+def edit_preset(
+    name: str = "",
+    add_skills: Optional[list[str]] = None,
+    remove_skills: Optional[list[str]] = None,
+    config: Optional[dict] = None,
+) -> None:
+    """Interactively add, remove, and toggle skills in a preset."""
+    config = config or load_config()
+    PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not name:
+        if sys.stdin.isatty():
+            available = sorted(d.name for d in PRESETS_DIR.iterdir() if d.is_dir())
+            if not available:
+                print_warn("No presets found in ~/.skill-ctl/presets/")
+                console.print("Create one with: [header]skctl presets create <name>[/header]")
+                return
+            name = prompt_preset(available, include_all=False)
+        else:
+            print_error("Error: Preset name is required. Usage: skctl presets edit <name>")
+            sys.exit(1)
+
+    preset_dir = preset_path(name)
+    if not preset_dir.exists() or not preset_dir.is_dir():
+        print_error(f"Preset '{name}' does not exist.")
+        sys.exit(1)
+
+    # CLI flags mode: non-interactive or batch
+    if add_skills or remove_skills:
+        if remove_skills:
+            flat_rm = [s.strip() for item in remove_skills for s in item.split(",") if s.strip()]
+            removed = remove_skills_from_preset(preset_dir, flat_rm)
+            if removed:
+                print_success(f"Removed {len(removed)} skill{'s' if len(removed) != 1 else ''} from '{name}': {', '.join(removed)}")
+            else:
+                print_warn(f"None of the specified skills were found in preset '{name}'.")
+
+        if add_skills:
+            flat_add = [s.strip() for item in add_skills for s in item.split(",") if s.strip()]
+            candidates = []
+            for other in sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir() and d != preset_dir):
+                candidates.extend(rows_for(other.name, get_preset_skills(other)))
+            candidates.extend(get_global_skills(config))
+            rows_to_add = [row for row in candidates if row["skill"] in flat_add]
+            if rows_to_add:
+                install_skills_into_preset(name, preset_dir, rows_to_add)
+            else:
+                print_warn(f"Could not find skills to add in local presets or global folders: {', '.join(flat_add)}")
+
+        maybe_auto_push(f"edit preset {name}")
+        return
+
+    if not sys.stdin.isatty():
+        print_error("Interactive preset editing requires a terminal. Or use --add / --remove.")
+        sys.exit(1)
+
+    while True:
+        skills = get_preset_skills(preset_dir)
+        skill_names = sorted(skills.keys())
+        console.print()
+        print_header(f"Editing preset '{name}'")
+        console.print(f"[dim]Location: {preset_dir}[/dim]")
+        if skill_names:
+            preview_names = ", ".join(skill_names[:8])
+            if len(skill_names) > 8:
+                preview_names += f" [dim]+{len(skill_names) - 8} more[/dim]"
+            console.print(f"[dim]Current skills ({len(skill_names)}):[/dim] {preview_names}")
+        else:
+            console.print("[dim]Current skills: (none)[/dim]")
+        console.print()
+        console.print("  [choice]1)[/choice] Add skills from installed presets / global")
+        console.print("  [choice]2)[/choice] Search & add from skills.sh (remote)")
+        console.print("  [choice]3)[/choice] Remove skills from this preset")
+        console.print("  [choice]4)[/choice] Sync / toggle all (dual-list picker)")
+        console.print("  [choice]5)[/choice] Done")
+
+        try:
+            choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5"], default="5", console=console)
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            break
+
+        if choice == "1":
+            if add_installed_to_preset(name, preset_dir, config, warn_empty=True):
+                maybe_auto_push(f"edit preset {name}: add skills")
+        elif choice == "2":
+            from skill_ctl.search import search
+            search(preset=name)
+            maybe_auto_push(f"edit preset {name}: search add skills")
+        elif choice == "3":
+            if not skill_names:
+                print_warn(f"Preset '{name}' has no skills to remove.")
+                continue
+            rows = rows_for(name, skills)
+            if wants_picker(config):
+                chosen = pick(
+                    rows,
+                    header=f"Remove from '{name}' · {DEFAULT_HEADER.replace('applies', 'selects')}",
+                    action="remove",
+                )
+                to_remove = [row["skill"] for row in chosen]
+            else:
+                to_remove = prompt_skills(skill_names, action="remove")
+            if not to_remove:
+                print_warn("Nothing selected to remove.")
+                continue
+            try:
+                if not Confirm.ask(
+                    f"Remove {len(to_remove)} skill{'s' if len(to_remove) != 1 else ''} from '{name}' ({', '.join(to_remove)})?",
+                    default=False, console=console,
+                ):
+                    continue
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                continue
+            removed_list = remove_skills_from_preset(preset_dir, to_remove)
+            print_success(f"Removed {len(removed_list)} skill{'s' if len(removed_list) != 1 else ''} from '{name}': {', '.join(removed_list)}")
+            maybe_auto_push(f"edit preset {name}: remove skills")
+        elif choice == "4":
+            _dual_list_toggle_preset(name, preset_dir, config)
+        elif choice == "5":
+            break
 
 
 def add_installed_to_preset(
@@ -889,54 +1237,7 @@ def add_installed_to_preset(
         print_warn("Nothing picked; the preset stays empty.")
         return 0
 
-    added = 0
-    pending = list(chosen)
-    lock = read_global_lock()
-    tracked = {}
-    for row in chosen:
-        entry = lock.get(row["skill"]) if row.get("scope") == "global" else None
-        source = entry.get("source") if isinstance(entry, dict) else None
-        if isinstance(source, str) and source:
-            tracked.setdefault(source, []).append(row)
-
-    # Reinstall tracked globals through upstream so the new preset receives its
-    # own skills-lock.json and `skctl update --preset` can update them later.
-    for source, rows in tracked.items():
-        args = ["add", source]
-        for row in rows:
-            args.extend(["--skill", row["skill"]])
-        args.extend(["--agent", "universal", "-y"])
-        if run_npx_skills(args, cwd=str(preset_dir)) == 0:
-            installed = {
-                row["skill"] for row in rows
-                if (preset_dir / ".agents" / "skills" / row["skill"]).is_dir()
-            }
-            added += len(installed)
-            pending = [row for row in pending if row not in rows or row["skill"] not in installed]
-        else:
-            print_warn(f"Could not reinstall skills from {source}; copying them instead.")
-
-    copied_without_lock = []
-    for row in pending:
-        dst = preset_dir / ".agents" / "skills" / row["skill"]
-        if dst.exists():
-            print_warn(f"Skipping {row['skill']} (already in '{name}')")
-            continue
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(row["path"], dst)
-        added += 1
-        if row.get("scope") == "global":
-            copied_without_lock.append(row["skill"])
-
-    if copied_without_lock:
-        print_warn(
-            "Copied global skills without update metadata; `update --preset` cannot update: "
-            + ", ".join(sorted(copied_without_lock))
-        )
-    if added:
-        names = ", ".join(sorted({row["skill"] for row in chosen}))
-        print_success(f"Added {added} skill{'s' if added != 1 else ''} to '{name}': {names}")
-    return added
+    return install_skills_into_preset(name, preset_dir, chosen)
 
 
 def add_installed_to_global(
@@ -1050,9 +1351,9 @@ def offer_add_after_create(name: str, preset_dir: Path, config: dict) -> None:
     if choice == "1":
         add_installed_to_preset(name, preset_dir, config, warn_empty=False)
     elif choice == "2":
-        from skill_ctl.skills import find
+        from skill_ctl.search import search
 
-        find(preset=name)
+        search(preset=name)
 
 
 def choose_skills(
@@ -1083,6 +1384,8 @@ def project_skill_dirs(project: Path, config: dict) -> list:
     from a preset has to stay findable, whoever put the directory there.
     """
     found = list(all_target_dirs(config))
+    if project == Path.home():
+        return found
     for pattern in (".*/skills", ".*/*/skills"):
         for entry in sorted(project.glob(pattern)):
             rel = entry.relative_to(project).as_posix()
@@ -1249,12 +1552,16 @@ def link_skills(
     owned: Optional[set] = None,
 ) -> None:
     """Present and record the result of the filesystem linker."""
-    print_header(f"Applying preset '{target_preset}' ({len(skills)} skills) to {target_project}")
+    is_home = target_project == Path.home()
+    target_label = "globally" if is_home else f"to {target_project}"
+    print_header(f"Applying preset '{target_preset}' ({len(skills)} skills) {target_label}")
     result = apply_skills(target_project, skills, dest_rel_dirs, use_copy, force, owned)
     for path in result.kept:
-        print_warn(f"Kept existing {path} (not a link; --force replaces it)")
+        prefix = "~/" if is_home else ""
+        print_warn(f"Kept existing {prefix}{path} (not a link; --force replaces it)")
     verb = "Copied" if result.copied else "Linked"
-    print_success(f"{verb} {len(result.applied)} skill{'s' if len(result.applied) != 1 else ''} into {', '.join(dest_rel_dirs)}")
+    dest_labels = [f"~/{d}" for d in dest_rel_dirs] if is_home else dest_rel_dirs
+    print_success(f"{verb} {len(result.applied)} skill{'s' if len(result.applied) != 1 else ''} into {', '.join(dest_labels)}")
     if result.applied:
         record_apply(target_project, target_preset, result.applied, dest_rel_dirs, "copy" if result.copied else "symlink")
 
@@ -1299,6 +1606,14 @@ def unapply(
         Optional[str],
         typer.Option("--project", "-p", help="Target project directory (default: current directory).")
     ] = None,
+    global_unapply: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Remove preset skills from global user agent directories.")
+    ] = False,
+    skill: Annotated[
+        Optional[str],
+        typer.Option("--skill", "-s", help="Only unapply these skills (comma-separated).")
+    ] = None,
     force: Annotated[
         bool,
         typer.Option("--force", "-f", help="Also delete real directories, such as those --copy made.")
@@ -1308,7 +1623,7 @@ def unapply(
         typer.Option("--yes", "-y", help="Skip the confirmation prompt.")
     ] = False,
 ) -> None:
-    """Remove a preset's skills from the project.
+    """Remove a preset's skills from the project or global agent directories.
 
     With no preset named, it removes what `apply` recorded for this project, or
     the default preset if there is no record. It deletes only what the preset
@@ -1316,19 +1631,57 @@ def unapply(
     skills-lock.json.
     """
     config = load_config()
-    target_project = Path(project).expanduser().resolve() if project else Path.cwd()
+    interactive = sys.stdin.isatty() and config.get("prompts", {}).get("ask_apply", True)
+
+    if not project and not global_unapply and interactive:
+        dest_choice = prompt_apply_destination(Path.cwd())
+        if dest_choice == "2":
+            global_unapply = True
+
+    if global_unapply:
+        target_project = Path.home()
+    else:
+        target_project = Path(project).expanduser().resolve() if project else Path.cwd()
 
     if preset:
         chosen_presets = [preset]
     else:
         recorded = presets_for(target_project)
-        chosen_presets = sorted(recorded) or [config.get("default_preset", "default")]
+        chosen_presets = sorted(recorded)
+        if not chosen_presets:
+            # Check if any preset has links into target_project
+            detected = []
+            if PRESETS_DIR.is_dir():
+                target_dirs = project_skill_dirs(target_project, config)
+                for p in sorted(PRESETS_DIR.iterdir()):
+                    if not p.is_dir():
+                        continue
+                    for rel_dir in target_dirs:
+                        dir_path = target_project / rel_dir
+                        if dir_path.is_dir():
+                            for s in dir_path.iterdir():
+                                if links_into_preset(s, p):
+                                    detected.append(p.name)
+                                    break
+            chosen_presets = sorted(set(detected))
+
+        if not chosen_presets:
+            loc_label = "Global (~/)" if target_project == Path.home() else str(target_project)
+            print_warn(f"Nothing is currently applied to {loc_label}.")
+            return
+
+    skill_list = [s.strip() for s in skill.split(",") if s.strip()] if skill else None
 
     if not yes and sys.stdin.isatty():
         label = ", ".join(chosen_presets)
+        loc_label = "Global (~/)" if target_project == Path.home() else str(target_project)
+        if skill_list:
+            prompt_msg = f"Remove skill{'s' if len(skill_list) != 1 else ''} ({', '.join(skill_list)}) in preset{'s' if len(chosen_presets) != 1 else ''} '{label}' from {loc_label}?"
+        else:
+            prompt_msg = f"Remove preset{'s' if len(chosen_presets) != 1 else ''} '{label}' from {loc_label}?"
         try:
             confirmed = Confirm.ask(
-                f"Remove preset{'s' if len(chosen_presets) != 1 else ''} '{label}' from {target_project}?",
+                prompt_msg,
                 default=False, console=console,
             )
         except (EOFError, KeyboardInterrupt):
@@ -1338,7 +1691,7 @@ def unapply(
             return
 
     for name in chosen_presets:
-        unapply_one(name, target_project, agent, force, config, named=bool(preset))
+        unapply_one(name, target_project, agent, force, config, named=bool(preset), skill_filter=skill_list)
 
 
 def unapply_one(
@@ -1348,6 +1701,7 @@ def unapply_one(
     force: bool,
     config: dict,
     named: bool = True,
+    skill_filter: Optional[Iterable[str]] = None,
 ) -> None:
     preset_dir = preset_path(target_preset)
     entry = presets_for(target_project).get(target_preset) or {}
@@ -1371,8 +1725,14 @@ def unapply_one(
 
     skills = get_preset_skills(preset_dir) if preset_dir.exists() else {}
     names = sorted(set(skills) | recorded_names)
+    if skill_filter:
+        fset = set(skill_filter)
+        names = [n for n in names if n in fset]
     if not names:
-        print_warn(f"No skills recorded in preset '{target_preset}'.")
+        if skill_filter:
+            print_warn(f"None of the specified skills found in preset '{target_preset}'.")
+        else:
+            print_warn(f"No skills recorded in preset '{target_preset}'.")
         return
 
     agent_map = get_agent_dir_map(config)
@@ -1385,7 +1745,9 @@ def unapply_one(
             project_skill_dirs(target_project, config) + list(entry.get("targets", []))
         ))
 
-    print_header(f"Removing preset '{target_preset}' skills from project at {target_project}")
+    is_home = target_project == Path.home()
+    target_label = "globally (~/)" if is_home else f"from project at {target_project}"
+    print_header(f"Removing preset '{target_preset}' skills {target_label}")
     removed = 0
     skipped = 0
     emptied = set()
@@ -1527,9 +1889,9 @@ def browse_presets(preset_dirs: list[Path]) -> tuple[Optional[str], list[str]]:
         preview_command = f"type {{5}}" if os.name == "nt" else "cat {5}"
         result = subprocess.run(
             [
-                "fzf", "--ansi", "--multi", "--expect", "alt-x,alt-e,alt-r,alt-n,alt-y,alt-m", "--tabstop", "2",
+                "fzf", "--ansi", "--multi", "--expect", "alt-x,alt-e,alt-r,alt-n,alt-y,alt-m,alt-t", "--tabstop", "2",
                 "--delimiter", "\t", "--with-nth", "2,3,4",
-                "--header", "Preset                  Skills  Applied projects\nTab select · Enter info · Alt-N new · Alt-Y clone · Alt-M combine · Alt-R rename · Alt-X delete · Alt-E export",
+                "--header", "Preset                  Skills  Applied projects\nTab select · Enter info · Alt-T edit · Alt-N new · Alt-Y clone · Alt-M combine · Alt-R rename · Alt-X delete · Alt-E export",
                 "--color", fzf_color_arg(config.get("theme")),
                 "--preview", preview_command, "--preview-window", "right,55%,wrap",
             ],
@@ -1539,7 +1901,7 @@ def browse_presets(preset_dirs: list[Path]) -> tuple[Optional[str], list[str]]:
         if result.returncode != 0 or not result.stdout.strip():
             return None, []
         selected = result.stdout.splitlines()
-        action = selected.pop(0) if selected[0] in ("alt-x", "alt-e", "alt-r", "alt-n", "alt-y", "alt-m") else None
+        action = selected.pop(0) if selected[0] in ("alt-x", "alt-e", "alt-r", "alt-n", "alt-y", "alt-m", "alt-t") else None
         if selected and not selected[0]:
             selected.pop(0)
         names = [preset_dirs[int(row.split("\t", 1)[0]) - 1].name for row in selected]
@@ -1556,7 +1918,7 @@ def _print_preset_summaries(names: list[str]) -> None:
 
 
 def presets(
-    action: Annotated[Literal["browse", "list", "applied", "create", "clone", "combine", "history", "rename", "delete", "export", "import"], typer.Argument()] = "browse",
+    action: Annotated[Literal["browse", "list", "applied", "create", "edit", "clone", "combine", "history", "rename", "delete", "export", "import"], typer.Argument()] = "browse",
     name: Annotated[str, typer.Argument()] = "",
     new_name: Annotated[str, typer.Argument()] = "",
     source_names: Annotated[list[str], typer.Argument()] = [],
@@ -1567,10 +1929,13 @@ def presets(
     import_rename: Annotated[Optional[str], typer.Option("--rename", help="New name for an imported preset.")] = None,
     replace: Annotated[bool, typer.Option("--replace", help="Replace an existing preset when importing, cloning, or combining.")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview an import, clone, or combine without writing files.")] = False,
+    add_skills: Annotated[Optional[list[str]], typer.Option("--add", "-a", help="Skill(s) to add to the preset.")] = None,
+    remove_skills: Annotated[Optional[list[str]], typer.Option("--remove", "-r", help="Skill(s) to remove from the preset.")] = None,
 ) -> None:
     """Create, clone, combine, rename, delete, export, and import presets.
 
-    Examples: `skctl presets clone BASE NEW`,
+    Examples: `skctl presets edit DEV`,
+    `skctl presets clone BASE NEW`,
     `skctl presets combine DEV FRONTEND BACKEND`,
     `skctl presets history DEV`,
     `skctl presets export NAME -o ARCHIVE`,
@@ -1586,6 +1951,9 @@ def presets(
     if from_path and action != "create":
         print_error("--from is only available with `skctl presets create`.")
         sys.exit(1)
+    if action == "edit":
+        edit_preset(name, add_skills=add_skills, remove_skills=remove_skills, config=load_config())
+        return
     if action == "clone":
         if not name or not new_name:
             print_error("Error: Usage: skctl presets clone <source> <new-name> [--replace]")
@@ -1638,7 +2006,12 @@ def presets(
             presets("create", prompt_new_preset_name())
             return
         if picked:
-            if picker_action == "alt-x":
+            if picker_action == "alt-t":
+                if len(picked) != 1:
+                    print_warn("Select one preset to edit.")
+                else:
+                    edit_preset(picked[0], config=config)
+            elif picker_action == "alt-x":
                 if Confirm.ask(f"Delete preset(s): {', '.join(picked)}?", default=False):
                     for preset_name in picked:
                         presets("delete", preset_name)
@@ -1809,37 +2182,213 @@ def presets(
 
 
 def status(
-    project: Annotated[Optional[str], typer.Option("--project")] = None,
+    project: Annotated[
+        Optional[str],
+        typer.Option("--project", "-p", help="Inspect status for a specific project directory (default: current directory).")
+    ] = None,
+    global_status: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Inspect global skills status (~/.agents/skills, ~/.claude/skills, ...).")
+    ] = False,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Show status across all recorded projects.")
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show detailed breakdown of all individual skills.")
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Show presets recorded for a project and whether their skills are present."""
+    """Show comprehensive skill, preset, and directory status."""
+    import json as jsonlib
     from rich import box
     from rich.table import Table
 
     config = load_config()
-    target = Path(project).expanduser().resolve() if project else Path.cwd()
+
+    if all_projects:
+        applied_map = load_applied()
+        if json_output:
+            print(jsonlib.dumps(applied_map, indent=2))
+            return
+
+        print_header("Skill status across all projects")
+        if not applied_map:
+            console.print("  [dim]No projects have applied presets recorded yet.[/dim]")
+            return
+
+        table = Table(box=box.ROUNDED, header_style="header")
+        table.add_column("Project / Scope", style="choice")
+        table.add_column("Presets", style="header")
+        table.add_column("Total Skills", justify="right")
+        table.add_column("Mode")
+        table.add_column("Targets")
+
+        for proj_path_str, presets_dict in sorted(applied_map.items()):
+            preset_names = ", ".join(sorted(presets_dict.keys()))
+            all_skills = sorted({s for entry in presets_dict.values() for s in entry.get("skills", [])})
+            modes = ", ".join(sorted({entry.get("mode", "symlink") for entry in presets_dict.values()}))
+            all_targets = ", ".join(sorted({t for entry in presets_dict.values() for t in entry.get("targets", [])}))
+
+            p_obj = Path(proj_path_str)
+            try:
+                p_label = "~/" + p_obj.relative_to(Path.home()).as_posix() if p_obj.is_relative_to(Path.home()) else proj_path_str
+            except Exception:
+                p_label = proj_path_str
+            if p_obj == Path.home():
+                p_label = "Global (~/)"
+
+            table.add_row(p_label, preset_names, str(len(all_skills)), modes, all_targets or "[dim]auto[/dim]")
+        console.print(table)
+        return
+
+    if global_status:
+        target = Path.home()
+        is_global = True
+    elif project:
+        target = Path(project).expanduser().resolve()
+        is_global = (target == Path.home())
+    else:
+        target = Path.cwd()
+        is_global = (target == Path.home())
+
     recorded = presets_for(target)
-    print_header(f"Skill status for {target}")
+    dirs = project_skill_dirs(target, config)
+
+    # Scan directory skills on disk
+    disk_folders = {}
+    for rel_dir in dirs:
+        dir_path = target / rel_dir
+        if dir_path.is_dir():
+            skills_in_dir = {}
+            for item in sorted(dir_path.iterdir()):
+                if not (item.is_dir() or item.is_symlink()):
+                    continue
+                origin = "standalone"
+                if item.is_symlink():
+                    try:
+                        resolved = item.resolve()
+                        if PRESETS_DIR.resolve() in resolved.parents:
+                            preset_name = resolved.relative_to(PRESETS_DIR.resolve()).parts[0]
+                            origin = f"link → {preset_name}"
+                        else:
+                            origin = "symlink"
+                    except Exception:
+                        origin = "broken link"
+                else:
+                    for p_name, p_entry in recorded.items():
+                        if item.name in p_entry.get("skills", []) and p_entry.get("mode") == "copy":
+                            origin = f"copy → {p_name}"
+                            break
+                skills_in_dir[item.name] = {
+                    "origin": origin,
+                    "is_symlink": item.is_symlink(),
+                    "valid": item.exists(),
+                    "path": str(item),
+                }
+            if skills_in_dir:
+                disk_folders[rel_dir] = skills_in_dir
+
+    if json_output:
+        data = {
+            "target": str(target),
+            "is_global": is_global,
+            "recorded_presets": recorded,
+            "disk_folders": disk_folders,
+        }
+        print(jsonlib.dumps(data, indent=2))
+        return
+
+    try:
+        target_display = "~/" + target.relative_to(Path.home()).as_posix() if target.is_relative_to(Path.home()) else str(target)
+    except Exception:
+        target_display = str(target)
+    if is_global:
+        target_display = "Global (~/)"
+
+    print_header(f"Skill status for {target_display}")
+
+    # Section 1: Applied Presets
     if recorded:
         table = Table(box=box.ROUNDED, header_style="header")
         table.add_column("Preset", style="choice")
-        table.add_column("Skills", justify="right")
+        table.add_column("Skills", style="header")
         table.add_column("Mode")
-        table.add_column("State")
-        dirs = project_skill_dirs(target, config)
+        table.add_column("Targets")
+        table.add_column("Status")
+
         for name, entry in sorted(recorded.items()):
-            names = set(entry.get("skills", []))
+            skill_names = entry.get("skills", [])
             preset_dir = preset_path(name)
+            targets_list = entry.get("targets") or dirs
+
             if not preset_dir.exists():
-                state = "preset missing"
+                state = "[warn]! preset missing[/warn]"
             else:
                 missing = sum(
-                    not any((target / rel_dir / skill).exists() for rel_dir in (entry.get("targets") or dirs))
-                    for skill in names
+                    not any((target / rel_dir / skill).exists() for rel_dir in targets_list)
+                    for skill in skill_names
                 )
-                state = "ok" if not missing else f"{missing} missing"
-            table.add_row(name, str(len(names)), str(entry.get("mode", "symlink")), state)
+                if missing == 0:
+                    state = "[success]✓ active[/success]"
+                else:
+                    state = f"[error]✗ {missing} missing[/error]"
+
+            if len(skill_names) <= 3:
+                skills_label = f"{len(skill_names)} ({', '.join(skill_names)})" if skill_names else "[dim]0[/dim]"
+            else:
+                skills_label = f"{len(skill_names)} ({', '.join(skill_names[:3])}, +{len(skill_names) - 3} more)"
+
+            targets_str = ", ".join(targets_list) if targets_list else "[dim]default[/dim]"
+            table.add_row(name, skills_label, str(entry.get("mode", "symlink")), targets_str, state)
         console.print(table)
     else:
-        console.print("[dim]No presets recorded for this project.[/dim]")
+        console.print("  [dim]No presets recorded for this project.[/dim]")
 
-    console.print("[dim]More detail: skctl presets applied, or browse presets with skctl presets[/dim]")
+    # Section 2: Active Skill Directories on Disk
+    if disk_folders:
+        console.print()
+        console.print("[bold]Active Agent Directories on Disk:[/bold]")
+        for rel_dir, s_map in disk_folders.items():
+            dir_label = f"~/{rel_dir}" if is_global else f"./{rel_dir}"
+            console.print(f"  [choice]📁 {dir_label}[/choice] [dim]({len(s_map)} skill{'s' if len(s_map) != 1 else ''})[/dim]")
+
+            items = list(s_map.items())
+            show_items = items if (verbose or len(items) <= 8) else items[:6]
+            for s_name, s_info in show_items:
+                orig = s_info["origin"]
+                if "broken" in orig:
+                    marker = "[error]✗[/error]"
+                elif "link" in orig:
+                    marker = "[success]•[/success]"
+                else:
+                    marker = "[choice]•[/choice]"
+                console.print(f"     {marker} {s_name} [dim]({orig})[/dim]")
+            if len(items) > len(show_items):
+                console.print(f"     [dim]... and {len(items) - len(show_items)} more (use --verbose / -v to see all)[/dim]")
+    elif not recorded:
+        console.print("  [dim]No skill folders found on disk.[/dim]")
+
+    # Section 3: Global Context (when viewing local project)
+    if not is_global:
+        global_rec = presets_for(Path.home())
+        global_skill_count = 0
+        for g_dir in (Path.home() / ".agents" / "skills", Path.home() / ".claude" / "skills"):
+            if g_dir.is_dir():
+                global_skill_count += len([x for x in g_dir.iterdir() if x.is_dir() or x.is_symlink()])
+        console.print()
+        if global_rec:
+            g_presets_str = ", ".join(f"[choice]{k}[/choice] ({len(v.get('skills', []))} skills)" for k, v in global_rec.items())
+            console.print(f"[dim]Global Scope (~/): {g_presets_str} · {global_skill_count} installed · [italic]skctl status -g[/italic][/dim]")
+        elif global_skill_count > 0:
+            console.print(f"[dim]Global Scope (~/): {global_skill_count} skills installed · [italic]skctl status -g[/italic][/dim]")
+
+    # Section 4: Presets Library Glance
+    if PRESETS_DIR.is_dir():
+        preset_count = len([p for p in PRESETS_DIR.iterdir() if p.is_dir()])
+        def_preset = config.get("default_preset", "default")
+        console.print(f"[dim]Presets Library: {preset_count} presets in ~/.skill-ctl/presets (default: '{def_preset}') · [italic]skctl presets[/italic][/dim]")

@@ -83,7 +83,9 @@ def get_json(url: str, timeout: float = 10) -> dict:
 
 
 def search(query: str, owner: Optional[str] = None) -> list[dict]:
-    params = {"q": query, "limit": str(SEARCH_LIMIT)}
+    if not query or len(query.strip()) < MIN_QUERY_LENGTH:
+        return []
+    params = {"q": query.strip(), "limit": str(SEARCH_LIMIT)}
     if owner:
         params["owner"] = owner
     try:
@@ -213,7 +215,7 @@ def write_rows(query: str, cache_dir: Path, owner: Optional[str] = None) -> list
 
 def choose_with_fzf(query: str, owner: Optional[str] = None) -> list[dict]:
     """Browse a live skills.sh search with details loaded for the highlighted row."""
-    with tempfile.TemporaryDirectory(prefix="skctl-find-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="skctl-search-") as temporary:
         root = Path(temporary)
         preview = preview_command()
         rows = f"{shell_quote(sys.executable)} -m skill_ctl.catalog --rows --cache-dir {shell_quote(str(root))} --query {{q}}"
@@ -550,4 +552,4 @@ if __name__ == "__main__":
             time.sleep(args.debounce)
         print("\n".join(write_rows(args.query, Path(args.cache_dir), args.owner)))
     else:
-        raise SystemExit("catalog preview is only available through `skctl find`")
+        raise SystemExit("catalog preview is only available through `skctl search`")

@@ -1,4 +1,4 @@
-"""Direct skill commands wrapping npx skills (add, list, remove, update, find)."""
+"""Direct skill commands wrapping npx skills (add, list, remove, update)."""
 
 import sys
 from pathlib import Path
@@ -11,12 +11,9 @@ from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.config import load_config
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
 from skill_ctl.ui import console, print_header, print_error, print_warn
-from skill_ctl.prompts import prompt_add_source, prompt_destination, prompt_skills
+from skill_ctl.prompts import prompt_destination, prompt_skills
 from skill_ctl.runner import run_npx_skills, get_detected_global_agents
 from skill_ctl.presets import (
-    add_installed_to_global,
-    add_installed_to_preset,
-    apply_across_presets,
     ensure_preset_dir,
     get_preset_skills,
     preset_path,
@@ -24,7 +21,10 @@ from skill_ctl.presets import (
 from skill_ctl.backup import maybe_auto_push
 
 def add(
-    package: Annotated[Optional[str], typer.Argument()] = None,
+    package: Annotated[
+        Optional[str],
+        typer.Argument(help="Package name or GitHub repo from skills.sh (e.g. owner/repo). Omit to search skills.sh interactively.")
+    ] = None,
     preset: Annotated[
         Optional[str],
         typer.Option("--preset", "-P", help="Preset to install into (~/.skill-ctl/presets/<name>/).")
@@ -70,18 +70,18 @@ def add(
         typer.Option("--json", help="Output machine-readable JSON.")
     ] = False,
 ) -> None:
-    """Add a skill package using npx skills (skills.sh). Can target a preset, project, or global."""
-    if package is None and skill is None and not sys.stdin.isatty():
-        print_error("Choosing a skill requires a terminal or a package name.")
+    """Add a skill package from skills.sh (or Git repo). Can target a preset, project, or global."""
+    if package is None and not sys.stdin.isatty():
+        print_error("Adding a skill requires a terminal or a package name.")
         sys.exit(1)
 
     config = load_config()
     default_dest = config.get("default_destination", "prompt")
     ask_dest = config.get("prompts", {}).get("ask_destination", True)
     default_preset_name = config.get("default_preset", "default")
-    # `add --preset <name>` has always meant “pick from installed skills”; only a
-    # bare `add` needs help choosing between that and the remote catalog.
-    add_source = prompt_add_source() if package is None and preset is None and sys.stdin.isatty() else "2"
+
+    if package is None and sys.stdin.isatty():
+        console.print("[dim]No skill package specified. Find and install from skills.sh:[/dim]")
 
     # If no destination flag was provided, determine target from config or prompt
     if preset is None and not global_install and project is None:
@@ -92,7 +92,9 @@ def add(
         elif default_dest == "preset":
             preset = default_preset_name
         elif ask_dest and sys.stdin.isatty() and not yes:
-            preset, project_flag, global_install = prompt_destination(PRESETS_DIR, default_preset=default_preset_name)
+            preset, project_flag, global_install = prompt_destination(
+                PRESETS_DIR, default_preset=default_preset_name, target_project=Path.cwd()
+            )
             if project_flag:
                 project = "."
             elif preset is None and not global_install:
@@ -101,35 +103,8 @@ def add(
             preset = default_preset_name
 
     if package is None:
-        if add_source == "1":
-            find(preset=preset, project=project, global_install=global_install)
-            return
-        if project:
-            target_project = Path(project).expanduser().resolve()
-            apply_across_presets(
-                target_project,
-                config,
-                agent=agent,
-                use_copy=copy,
-                force=force,
-                explicit_pick=True,
-                skill=skill,
-            )
-            return
-        if global_install:
-            add_installed_to_global(
-                config,
-                agent=agent,
-                use_copy=copy,
-                force=force,
-                skill=skill,
-            )
-            return
-        if preset:
-            preset_dir = ensure_preset_dir(preset)
-            if add_installed_to_preset(preset, preset_dir, config):
-                maybe_auto_push(f"add installed skills to {preset}")
-            return
+        from skill_ctl.search import search
+        search(preset=preset, project=project, global_only=global_install, remote_only=True)
         return
 
     npx_args = [package]
@@ -399,84 +374,3 @@ def update(
     if code != 0:
         sys.exit(code)
 
-def find(
-    query: Annotated[Optional[str], typer.Argument()] = None,
-    preset: Annotated[
-        Optional[str],
-        typer.Option("--preset", "-P", help="Install a selected skill into this preset.")
-    ] = None,
-    owner: Annotated[Optional[str], typer.Option("--owner", help="Search only repositories from a GitHub owner.")] = None,
-    global_install: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Install the selected skill globally.")
-    ] = False,
-    npx: Annotated[
-        bool,
-        typer.Option("--npx", help="Use npx skills' own interactive finder instead of skctl's fzf picker.")
-    ] = False,
-    project: Annotated[
-        Optional[str],
-        typer.Option("--project", "-p", help="Target project directory.")
-    ] = None,
-) -> None:
-    """Search skills.sh with skctl's picker.
-
-    Each result shows its install count, GitHub stars, and a SKILL.md preview
-    before you pick, and fzf allows multi-select. --npx uses npx skills' own
-    finder instead. To search the skills you already have, use `skctl search`.
-    """
-    if not npx:
-        # The catalog client pulls in HTTP and YAML support.  `find` is the only
-        # command that needs it, so defer that startup work for every other CLI
-        # command.
-        from skill_ctl.catalog import choose as choose_catalog_skill, inspect as inspect_catalog_skill
-
-        selected = choose_catalog_skill(query or "", owner)
-        if not selected or not inspect_catalog_skill(selected):
-            return
-
-        # Several picks can come from different repos; one `npx skills add`
-        # call per source, naming every skill from that source with its own
-        # --skill flag installs them together instead of one call each.
-        by_source: dict[str, list[str]] = {}
-        for skill in selected:
-            source = str(skill.get("source") or skill.get("id", ""))
-            name = str(skill.get("name", ""))
-            if source:
-                by_source.setdefault(source, []).append("*" if skill.get("_all_from_source") else name)
-        if not by_source:
-            print_error("The selected skills.sh results have no installable source.")
-            sys.exit(1)
-
-        target = ensure_preset_dir(preset) if preset else (Path(project).expanduser().resolve() if project else Path.cwd())
-        installed: list[str] = []
-        exit_code = 0
-        for source, names in by_source.items():
-            args = ["add", source]
-            if "*" not in names:
-                for name in names:
-                    args.extend(["--skill", name])
-            if global_install:
-                args.append("-g")
-            code = run_npx_skills(args, cwd=str(target))
-            if code == 0:
-                installed.extend(names)
-            else:
-                exit_code = code
-        if installed and preset:
-            maybe_auto_push(f"add {', '.join(installed)} to {preset}")
-        if exit_code != 0:
-            sys.exit(exit_code)
-        return
-
-    args = ["find"] + ([query] if query else [])
-    if owner:
-        args.extend(["--owner", owner])
-    if global_install:
-        args.append("-g")
-    target = ensure_preset_dir(preset) if preset else Path.cwd()
-    code = run_npx_skills(args, cwd=str(target))
-    if code == 0 and preset:
-        maybe_auto_push(f"find skill for {preset}")
-    if code != 0:
-        sys.exit(code)

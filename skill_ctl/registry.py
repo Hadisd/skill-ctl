@@ -53,6 +53,8 @@ def write_project_file(project: Path, presets: dict) -> None:
     Always under the current name, so a project carrying the old one is migrated
     by the first command that changes anything.
     """
+    if project == Path.home():
+        return
     path = project / PROJECT_FILE
     try:
         if presets:
@@ -102,7 +104,11 @@ def record_apply(project: Path, preset: str, skills: Iterable[str], targets: Ite
     so the newest wins; a project that mixes symlinks and copies from one preset
     needs `unapply --force` to clear the copies.
     """
-    in_project = read_project_file(project)
+    if project == Path.home():
+        projects = load_applied()
+        in_project = projects.get(str(project), {})
+    else:
+        in_project = read_project_file(project)
     previous = in_project.get(preset) or {}
     entry = {
         "skills": sorted(set(previous.get("skills", [])) | set(skills)),
@@ -119,17 +125,21 @@ def record_apply(project: Path, preset: str, skills: Iterable[str], targets: Ite
 
 
 def forget_apply(project: Path, preset: str) -> None:
-    in_project = read_project_file(project)
-    in_project.pop(preset, None)
-    write_project_file(project, in_project)
+    if project == Path.home():
+        projects = load_applied()
+        in_project = projects.get(str(project), {})
+        in_project.pop(preset, None)
+    else:
+        in_project = read_project_file(project)
+        in_project.pop(preset, None)
+        write_project_file(project, in_project)
+        projects = load_applied()
 
-    projects = load_applied()
-    if str(project) in projects:
-        if in_project:
-            projects[str(project)] = in_project
-        else:
-            del projects[str(project)]
-        save_applied(projects)
+    if in_project:
+        projects[str(project)] = in_project
+    else:
+        projects.pop(str(project), None)
+    save_applied(projects)
 
 
 def keep_only(project: Path, preset: str, skills: Iterable[str]) -> None:
@@ -139,7 +149,11 @@ def keep_only(project: Path, preset: str, skills: Iterable[str]) -> None:
     hand - and the record is what `unapply --force` uses to find them again, so it
     must survive that run while naming only what is actually still there.
     """
-    in_project = read_project_file(project)
+    if project == Path.home():
+        projects = load_applied()
+        in_project = projects.get(str(project), {})
+    else:
+        in_project = read_project_file(project)
     entry = in_project.get(preset)
     if not entry:
         return
@@ -148,7 +162,8 @@ def keep_only(project: Path, preset: str, skills: Iterable[str]) -> None:
         entry["skills"] = remaining
         in_project[preset] = entry
     else:
-        del in_project[preset]
+        in_project.pop(preset, None)
+
     write_project_file(project, in_project)
 
     projects = load_applied()

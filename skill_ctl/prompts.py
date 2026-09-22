@@ -76,9 +76,22 @@ def _browse_preset_choices(
         return int(result.stdout.partition("\t")[0]) if result.returncode == 0 else None
 
 
+def prompt_apply_destination(target_project: Path) -> str:
+    """Ask whether to apply skills to the current project or globally."""
+    console.print()
+    console.print("[dim]Where would you like to apply?[/dim]")
+    try:
+        proj_label = "~/" + target_project.relative_to(Path.home()).as_posix() if target_project.is_relative_to(Path.home()) else str(target_project)
+    except Exception:
+        proj_label = str(target_project)
+    console.print(f"  [choice]1)[/choice] Current project [dim]({proj_label}; default)[/dim]")
+    console.print("  [choice]2)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]")
+    return _ask("[bold]Choose destination[/bold]", choices=["1", "2"], default="1")
+
+
 def prompt_apply_type() -> str:
     console.print()
-    console.print("[dim]What would you like to apply to this project?[/dim]")
+    console.print("[dim]What would you like to apply?[/dim]")
     console.print("  [choice]1)[/choice] Specific skill(s) [dim](search & pick across all presets; default)[/dim]")
     console.print("  [choice]2)[/choice] An entire preset [dim](apply all skills from a preset)[/dim]")
     return _ask("[bold]Choose an option[/bold]", choices=["1", "2"], default="1")
@@ -189,18 +202,30 @@ def prompt_new_preset_name() -> str:
         print_warn("Preset name cannot be empty.")
 
 
-def prompt_destination(presets_dir: Path, default_preset: str = "default") -> tuple[Optional[str], bool, bool]:
+def prompt_destination(
+    presets_dir: Path,
+    default_preset: str = "default",
+    target_project: Optional[Path] = None,
+) -> tuple[Optional[str], bool, bool]:
     presets_dir.mkdir(parents=True, exist_ok=True)
     names = sorted(path.name for path in presets_dir.iterdir() if path.is_dir())
+    proj = target_project or Path.cwd()
+    try:
+        proj_label = "~/" + proj.relative_to(Path.home()).as_posix() if proj.is_relative_to(Path.home()) else str(proj)
+    except Exception:
+        proj_label = str(proj)
+
     console.print()
-    console.print("[dim]Where do you want to save this skill?[/dim]")
-    console.print("  [choice]1)[/choice] Preset")
-    console.print("  [choice]2)[/choice] Current Project")
-    console.print("  [choice]3)[/choice] Global")
-    choice = _ask("[bold]Choose an option[/bold]", choices=["1", "2", "3"], default="1")
+    console.print("[dim]Where would you like to install?[/dim]")
+    console.print(f"  [choice]1)[/choice] Current project [dim]({proj_label}; default)[/dim]")
+    console.print(f"  [choice]2)[/choice] Preset [dim](~/.skill-ctl/presets/...)[/dim]")
+    console.print("  [choice]3)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]")
+    choice = _ask("[bold]Choose destination[/bold]", choices=["1", "2", "3"], default="1")
     if choice == "1":
+        return None, True, False
+    if choice == "2":
         return prompt_preset_or_new(names, default_preset, presets_dir), False, False
-    return None, choice == "2", choice == "3"
+    return None, False, True
 
 
 def prompt_theme(names: list[str], current: str) -> str:

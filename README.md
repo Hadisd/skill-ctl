@@ -112,11 +112,12 @@ skctl add --preset frontend          # choose from installed skills
 
 A bare `--preset` uses `default_preset` from `~/.skill-ctl/config.yaml`. Flags such as `-y` and `--agent` pass through to `npx skills`.
 
-Apply skills from inside a project:
+Apply skills to a project or globally:
 
 ```bash
-skctl apply                            # choose a preset and its skills
-skctl apply my-preset                  # apply the whole preset
+skctl apply                            # choose destination (project or global), preset, and skills
+skctl apply my-preset                  # apply preset to current project
+skctl apply my-preset -g               # apply preset globally (~/.agents/skills, ~/.claude/skills, ...)
 skctl apply frontend -s web-design-guidelines # apply selected skills without a prompt
 skctl apply my-preset --pick           # choose skills in fzf
 skctl apply my-preset --agent cursor
@@ -128,6 +129,7 @@ Remove applied skills:
 
 ```bash
 skctl unapply my-preset
+skctl unapply my-preset -g  # remove preset links from global agent folders
 skctl unapply              # use the project record or the default preset
 skctl rm                   # choose installed skills to remove
 ```
@@ -139,20 +141,22 @@ skctl rm                   # choose installed skills to remove
 | `skctl add [<pkg>] --preset [name]` | Add a package, or choose from installed skills |
 | `skctl add <pkg> -p [path]` | Install directly into a project |
 | `skctl add <pkg> -g` | Install globally |
-| `skctl apply [preset]` | Choose interactively, or apply a named preset |
+| `skctl apply [preset]` | Choose interactively (project or global), or apply a named preset |
+| `skctl apply [preset] -g` | Apply a preset globally (~/.agents/skills, ~/.claude/skills, ...) |
 | `skctl apply [preset] -s a,b` | Apply named skills without prompting |
 | `skctl apply [preset] --pick` | Choose skills in fzf |
 | `skctl apply --all-presets` | Choose from every preset |
 | `skctl apply --resync` | Reapply the skills recorded by the project |
 | `skctl apply [preset] --npx` | Install through `npx skills` instead of linking |
 | `skctl apply [preset] --dry-run` | Preview links, copies, replacements, and npx commands without writing |
-| `skctl unapply [preset]` | Remove a preset's links from a project |
+| `skctl unapply [preset] [-g]` | Remove a preset's links from a project or globally |
 | `skctl presets` | Browse presets with fzf, or list them when fzf is unavailable. Tab selects; Alt-N creates, Alt-L clones, Alt-M combines, Alt-R renames, Alt-D deletes, and Alt-E exports. |
 | `skctl presets list` | List presets, skill counts, and applied project counts |
 | `skctl presets applied` | Show every project and the presets applied to it |
 | `skctl presets rename <old> <new>` | Rename a preset and update project records |
-| `skctl status [--project <path>]` | Show applied preset status for a project |
+| `skctl status [-p <path>\|-g\|-a\|-v\|--json]` | Show comprehensive skill, preset, and agent directory status |
 | `skctl presets create <name> [--from <path>]` | Create a preset, optionally copying direct skills from a path |
+| `skctl presets edit <name> [--add <skill>] [--remove <skill>]` | Interactively add, remove, and toggle skills in a preset |
 | `skctl presets clone <source> <name>` | Copy a preset into an independent new preset |
 | `skctl presets combine <name> <preset> <preset> [...]` | Copy several presets' skills into one flat preset |
 | `skctl presets history <name>` | Show a preset's clone or combine origin |
@@ -210,7 +214,40 @@ skill root, an agent directory such as `.agents`, or a project root; project
 roots scan `.agents/skills` and `.claude/skills`. Sources are never moved or
 linked.
 
-Run `skctl` without a subcommand to see the storage path, preset count, and a short command guide.
+### Editing presets
+
+Use `skctl presets edit <name>` to modify an existing preset interactively or via CLI flags:
+
+```bash
+skctl presets edit frontend                            # open interactive menu (add, remove, search, dual-list toggle)
+skctl presets edit frontend --add react,nextjs         # add skills from local presets/global
+skctl presets edit frontend --remove old-tool          # remove skills from preset
+```
+
+Interactive options include:
+1. Adding installed skills from other presets or global agent folders.
+2. Searching and installing remote skills from `skills.sh`.
+3. Selecting skills to remove.
+4. Dual-list sync/toggle picker (visual keep/add/remove).
+
+## Status & inspection
+
+`skctl status` provides a live view of applied presets, on-disk agent directories, and skill health:
+
+```bash
+skctl status                                           # inspect current project
+skctl status -g                                        # inspect global agent directories (~/.agents, ~/.claude, ...)
+skctl status -a                                        # show applied presets across all recorded projects
+skctl status -v                                        # verbose breakdown of individual skill links and origins
+skctl status --json                                    # output full status as JSON
+```
+
+The status output verifies:
+- **Applied Presets:** lists active vs missing preset links (`✓ active`, `! missing`).
+- **Active Agent Directories:** detects `.agents/skills`, `.claude/skills`, `.cursor/skills`, etc., indicating whether skills are symlinked to a preset, copies, or standalone.
+- **Global Overview:** summarizes active global skills when checking a local project.
+
+Run `skctl` without a subcommand to see the storage path, detected agents, preset counts, and a short command guide.
 
 ## Configuration
 
@@ -261,21 +298,19 @@ npx:
 
 ## Search
 
-`skctl find` searches skills.sh with skctl's own fzf picker: up to 50 live results, installs count, and a preview panel with GitHub stars and SKILL.md content, Tab to select several at once. Pass `--npx` to use `npx skills`' own interactive finder instead. `skctl search` searches skills already stored in presets or configured global folders.
+`skctl search` provides unified discovery across your installed presets, global folders, and the remote `skills.sh` catalog. Matching skills open in an interactive picker with syntax-highlighted previews, GitHub stars, and install counts.
 
 ```bash
-skctl find                            # skctl's fzf picker, live results
-skctl find typescript                 # start the picker with a query
-skctl find --preset frontend          # choose interactively, then install into a preset
-skctl find react -P frontend          # search and install into a preset
-skctl find --npx                      # npx skills' own interactive finder
-skctl find react --npx -P frontend    # npx skills' finder, started with a query
-skctl search latex                   # opens fzf with “latex” entered
-skctl search ltxpap                  # fzf fuzzy-match for latex-paper
-skctl search diagrams --preset work
-skctl search --global
-skctl search --applied
-skctl search bibliography --json
+skctl search                            # browse local skills with fzf
+skctl search typescript                 # search local presets and skills.sh
+skctl search react --preset frontend    # search and install/apply into a preset
+skctl search --remote                   # only search the remote skills.sh catalog
+skctl search --local                    # only search local presets and global folders
+skctl search --applied                  # only show skills already applied to project
+skctl search --global                   # search only global skill folders
+skctl search --json                     # output local matches as JSON
+skctl search react --remote --json      # query skills.sh and output as JSON
+skctl search --npx                      # use npx skills' own interactive finder
 ```
 
 Every word in the query must match either the skill name or its description. Names support substring and subsequence matching. Descriptions support substring matching only. Exact name matches rank before fuzzy name matches and description matches.
@@ -299,7 +334,7 @@ The preview pane displays `SKILL.md`. It uses `bat`, `batcat`, `glow`, or `cat`,
 
 The location column is dim magenta. Descriptions are dim. Selecting a global result does not apply it again because it is already available globally.
 
-In `skctl find`, Alt-A opens `npx skills`' picker for the highlighted repository. Alt-C replaces the search query with that repository name.
+In remote search results, Alt-A opens `npx skills`' picker for the highlighted repository. Alt-C replaces the search query with that repository name.
 
 Without fzf, `skctl` uses a numbered prompt. Set the picker explicitly if needed:
 

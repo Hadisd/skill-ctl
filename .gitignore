@@ -5,6 +5,7 @@ dist/
 build/
 tests/
 skill*.json
+tui.md
 
 .*
 !.git

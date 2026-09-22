@@ -30,7 +30,6 @@ SUBCOMMAND_LOADERS = {
     "list": ("skill_ctl.skills", "list_skills"),
     "remove": ("skill_ctl.skills", "remove"),
     "update": ("skill_ctl.skills", "update"),
-    "find": ("skill_ctl.skills", "find"),
     "search": ("skill_ctl.search", "search"),
     "config": ("skill_ctl.config_commands", "config_cmd"),
     "theme": ("skill_ctl.config_commands", "theme_cmd"),
@@ -45,10 +44,10 @@ _LAZY_EXPORTS = {
     "list_skills": ("skill_ctl.skills", "list_skills"),
     "remove": ("skill_ctl.skills", "remove"),
     "update": ("skill_ctl.skills", "update"),
-    "find": ("skill_ctl.skills", "find"),
     "apply": ("skill_ctl.presets", "apply"),
     "unapply": ("skill_ctl.presets", "unapply"),
     "presets": ("skill_ctl.presets", "presets"),
+    "edit_preset": ("skill_ctl.presets", "edit_preset"),
     "status": ("skill_ctl.presets", "status"),
     "get_preset_skills": ("skill_ctl.presets", "get_preset_skills"),
     "search": ("skill_ctl.search", "search"),
@@ -94,8 +93,7 @@ ROOT_COMMAND_GROUPS = (
         ("presets", "Browse and manage presets"),
     )),
     ("Skills", (
-        ("find", "Find and install skills from skills.sh"),
-        ("search", "Search installed preset and global skills"),
+        ("search", "Search and install skills locally or from skills.sh"),
         ("list", "List installed skills"),
         ("remove", "Remove an installed skill"),
         ("update", "Update installed skills"),
@@ -114,6 +112,7 @@ ROOT_COMMAND_GROUPS = (
 
 PRESET_ACTION_USAGE = {
     "create": "skctl presets create <name> [--from PATH]",
+    "edit": "skctl presets edit <name> [--add SKILL] [--remove SKILL]",
     "clone": "skctl presets clone <source> <new-name> [--replace]",
     "combine": "skctl presets combine <new-name> <preset> <preset> [...] [--replace] [--dry-run]",
     "history": "skctl presets history <name>",
@@ -220,21 +219,83 @@ def preprocess_args(args: list[str]) -> list[str]:
 
     return result
 
+def print_project_context() -> None:
+    """Print project context: project directory, detected agents, and applied presets."""
+    cwd = Path.cwd()
+    home = Path.home()
+    try:
+        if cwd == home:
+            project_path = "~"
+        elif cwd.is_relative_to(home):
+            project_path = f"~/{cwd.relative_to(home)}"
+        else:
+            project_path = str(cwd)
+    except (ValueError, AttributeError):
+        project_path = str(cwd)
+
+    from skill_ctl.registry import read_project_file
+
+    applied = read_project_file(cwd)
+    console.print()
+    console.print(f"  [bold]Project:[/bold] {project_path}")
+    if applied:
+        preset_summaries = []
+        for name, data in applied.items():
+            skills = data.get("skills", []) if isinstance(data, dict) else []
+            count = len(skills)
+            preset_summaries.append(f"{name} ({count} skill{'s' if count != 1 else ''})")
+        console.print(f"  [bold]Applied presets:[/bold] {', '.join(preset_summaries)}")
+
+
 def print_status_summary() -> None:
-    """Print the skill store location and its preset and skill counts."""
+    """Print the detected agents, skill store location, and its preset and skill counts."""
+    cwd = Path.cwd()
+    known_agents = [
+        ("Claude Code (.claude)", [cwd / ".claude"]),
+        ("Antigravity (.agents)", [cwd / ".agents"]),
+        ("Cursor (.cursor)", [cwd / ".cursor"]),
+        ("Windsurf (.windsurf)", [cwd / ".codeium" / "windsurf", cwd / ".windsurf"]),
+        ("Codex (.codex)", [cwd / ".codex"]),
+        ("Cline (.cline)", [cwd / ".cline"]),
+        ("Gemini (.gemini)", [cwd / ".gemini"]),
+        ("GitHub Copilot (.github)", [cwd / ".github" / "copilot", cwd / ".github" / "copilot-instructions.md"]),
+        ("Goose (.goose)", [cwd / ".goose"]),
+    ]
+
+    detected = []
+    seen = set()
+    for name, paths in known_agents:
+        if any(p.exists() for p in paths):
+            detected.append(name)
+            seen.add(name)
+
+    try:
+        for item in sorted(cwd.iterdir()):
+            if item.is_dir() and item.name.startswith(".") and (item / "skills").is_dir():
+                label = f"{item.name.lstrip('.').title()} ({item.name})"
+                if not any(item.name in s for s in seen):
+                    detected.append(label)
+                    seen.add(label)
+    except OSError:
+        pass
+
     from skill_ctl.skillscan import get_preset_skills
     preset_dirs = sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir()) if PRESETS_DIR.is_dir() else []
     skill_count = sum(len(get_preset_skills(d)) for d in preset_dirs)
+
     console.print()
-    console.print(f"[dim]{BASE_DIR}[/dim]")
+    if detected:
+        agents_display = ", ".join(detected)
+        console.print(f"[dim]Detected agents: {agents_display}[/dim]")
     console.print(
-        f"[dim]{len(preset_dirs)} preset{'s' if len(preset_dirs) != 1 else ''}, "
+        f"[dim]{BASE_DIR} · {len(preset_dirs)} preset{'s' if len(preset_dirs) != 1 else ''}, "
         f"{skill_count} skill{'s' if skill_count != 1 else ''}[/dim]"
     )
 
 
 def print_root_help() -> None:
-    console.print("\n [bold]Store skills once. Use them where they fit.[/bold]\n")
+    print_project_context()
+    console.print()
     print_usage("skctl <COMMAND>")
     console.print()
     for group, commands in ROOT_COMMAND_GROUPS:
