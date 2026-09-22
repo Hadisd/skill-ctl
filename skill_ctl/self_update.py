@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Annotated
@@ -83,6 +84,89 @@ def installed_version() -> tuple[int, int, int]:
     return parse_version(__version__)
 
 
+def is_windows() -> bool:
+    return os.name == "nt"
+
+
+def cleanup_old_executables() -> None:
+    """Silently delete any leftover *.old.exe files from previous Windows self-updates."""
+    if not is_windows():
+        return
+    try:
+        prefix = Path(sys.prefix)
+        search_dirs = [prefix / "Scripts", prefix / "bin", Path(sys.argv[0]).parent]
+        for d in set(search_dirs):
+            if d.is_dir():
+                for old_file in d.glob("*old.exe"):
+                    try:
+                        old_file.unlink()
+                    except OSError:
+                        pass
+    except Exception:
+        pass
+
+
+def run_installer_with_windows_handling(command: list[str]) -> int:
+    """Execute installer command, swapping running executables on Windows to avoid file locks."""
+    renamed: list[tuple[Path, Path]] = []
+    if is_windows():
+        prefix = Path(sys.prefix)
+        candidates = [
+            Path(sys.argv[0]),
+            prefix / "Scripts" / "skctl.exe",
+            prefix / "Scripts" / "skill-ctl.exe",
+            prefix / "bin" / "skctl.exe",
+            prefix / "bin" / "skill-ctl.exe",
+        ]
+        for name in ("skctl", "skill-ctl"):
+            which_p = shutil.which(name)
+            if which_p:
+                candidates.append(Path(which_p))
+
+        for exe in set(candidates):
+            if exe and exe.is_file() and exe.suffix.lower() == ".exe":
+                old_exe = exe.with_name(f"{exe.stem}.old.exe")
+                if old_exe.exists():
+                    try:
+                        old_exe.unlink()
+                    except OSError:
+                        pass
+                try:
+                    os.rename(exe, old_exe)
+                    renamed.append((exe, old_exe))
+                except OSError:
+                    pass
+
+    try:
+        result = subprocess.run(command)
+        returncode = result.returncode
+    except OSError as error:
+        for orig, old in renamed:
+            if not orig.exists() and old.exists():
+                try:
+                    os.rename(old, orig)
+                except OSError:
+                    pass
+        raise error
+
+    if returncode != 0:
+        for orig, old in renamed:
+            if not orig.exists() and old.exists():
+                try:
+                    os.rename(old, orig)
+                except OSError:
+                    pass
+    else:
+        for _orig, old in renamed:
+            if old.exists():
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+
+    return returncode
+
+
 def self_update(
     check: Annotated[
         bool,
@@ -118,32 +202,14 @@ def self_update(
         print("Update cancelled.")
         return
 
+    cleanup_old_executables()
     command = installer_command(Path(sys.prefix), Path(sys.executable), release.wheel_url, release.tag)
-    if os.name == "nt":
-        print_windows_manual_command(command)
-        return
     try:
-        result = subprocess.run(command)
+        returncode = run_installer_with_windows_handling(command)
     except OSError as error:
         print_error(f"Could not start installer {command[0]}: {error}")
         raise SystemExit(1) from error
-    if result.returncode != 0:
+    if returncode != 0:
         print_error(f"Could not update skctl to {release.tag}.")
         raise SystemExit(1)
     print_success(f"Updated skctl to {release.tag}.")
-
-
-def print_windows_manual_command(command: list[str]) -> None:
-    """Windows keeps this process's own install directory locked while it
-    runs, so skctl cannot replace itself from inside its own process.
-
-    A detached background process was tried here before, to run the
-    installer once this process exits; it was unreliable in practice (silent
-    failures, timing-dependent) and harder to debug than just running the
-    command directly. Printing it for a manual run in a fresh shell matches
-    what's actually proven to work.
-    """
-    quoted = " ".join(f'"{part}"' if " " in part else part for part in command)
-    print_warn("Windows can't replace its own running files while skctl is running them.")
-    console.print("Run this in a new terminal (after closing this one):")
-    console.print(f"  [header]{quoted}[/header]")
