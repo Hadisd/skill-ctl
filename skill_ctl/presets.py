@@ -40,12 +40,30 @@ from skill_ctl.runner import run_npx_skills
 # Re-exported: it lives in its own module so callers that only count skills
 # need not import this one, but it stays reachable as presets.get_preset_skills.
 from skill_ctl.skillscan import get_preset_skills
-from skill_ctl.theme import fzf_color_arg, picker_ansi
+from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.registry import (
     PROJECT_FILE, load_applied, save_applied, read_project_file, write_project_file,
     record_apply, forget_apply, keep_only, presets_for, projects_using,
 )
 from skill_ctl.backup import maybe_auto_push
+
+
+def preview_markdown_command(field_placeholder: str = "{5}") -> str:
+    """Render markdown preview using bat or glow when available, falling back to cat/type."""
+    width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
+    theme = shlex.quote(bat_theme(load_config().get("theme")))
+    bat_options = (
+        f'--color=always --paging=never --style=plain --language=md --theme={theme} '
+        f'--squeeze-blank --wrap=character --terminal-width={width}'
+    )
+    if shutil.which("bat"):
+        return f"bat {bat_options} {field_placeholder}"
+    if shutil.which("batcat"):
+        return f"batcat {bat_options} {field_placeholder}"
+    if shutil.which("glow"):
+        return f"glow --style dark {field_placeholder}"
+    command = "type" if os.name == "nt" else "cat"
+    return f"{command} {field_placeholder}"
 
 def preset_path(preset_name: str) -> Path:
     """Resolve a preset name to its directory, rejecting anything that escapes
@@ -107,21 +125,41 @@ def preset_history(name: str) -> None:
 
 
 def preset_preview(preset_dir: Path, projects: list[str]) -> str:
-    """Build the fzf preview for a preset, including its recorded origin."""
+    """Build the fzf Markdown preview for a preset, including its recorded origin."""
     skills = sorted(get_preset_skills(preset_dir))
-    text = (
-        f"Preset: {preset_dir.name}\nLocation: {preset_dir}\nApplied projects ({len(projects)}):\n"
-        + "\n".join(f"  {project}" for project in projects)
-        + f"\n\nSkills ({len(skills)}):\n"
-        + "\n".join(f"  {skill}" for skill in skills)
-    )
+    md = [
+        f"# {preset_dir.name}",
+        "",
+        f"**Location:** `{preset_dir}`",
+        "",
+    ]
+    if projects:
+        md.append(f"### Applied Projects ({len(projects)})")
+        for project in projects:
+            md.append(f"- `{project}`")
+        md.append("")
+    else:
+        md.append("### Applied Projects\n*(none)*\n")
+
+    if skills:
+        md.append(f"### Skills ({len(skills)})")
+        for skill in skills:
+            md.append(f"- **{skill}**")
+        md.append("")
+    else:
+        md.append("### Skills\n*(none)*\n")
+
     events = _history_events(preset_dir)
     if events:
-        text += "\n\nHistory:\n" + "\n".join(
-            f"  {event.get('at', '')}  {event.get('action', '')}  {', '.join(event.get('sources', []))}"
-            for event in events
-        )
-    return text
+        md.append("### History:")
+        for event in events:
+            at = event.get('at', '')
+            action = event.get('action', '')
+            sources = ', '.join(event.get('sources', []))
+            md.append(f"- `{at}` **{action}** {sources}")
+        md.append("")
+
+    return "\n".join(md).strip() + "\n"
 
 
 def preset_export(
@@ -332,12 +370,27 @@ def remote_preset_preview(preset_dir: Path) -> str:
     """Show the useful parts of a downloaded preset without its temporary path."""
     skills = sorted(get_preset_skills(preset_dir))
     files = sorted(str(path.relative_to(preset_dir)) for path in preset_dir.rglob("*") if path.is_file())
-    return (
-        f"Preset: {preset_dir.name}\n\nSkills ({len(skills)}):\n"
-        + "\n".join(f"  {skill}" for skill in skills)
-        + f"\n\nFiles ({len(files)}):\n"
-        + "\n".join(f"  {path}" for path in files)
-    )
+    md = [
+        f"# {preset_dir.name}",
+        "",
+    ]
+    if skills:
+        md.append(f"### Skills ({len(skills)})")
+        for skill in skills:
+            md.append(f"- **{skill}**")
+        md.append("")
+    else:
+        md.append("### Skills\n*(none)*\n")
+
+    if files:
+        md.append(f"### Files ({len(files)})")
+        for path in files:
+            md.append(f"- `{path}`")
+        md.append("")
+    else:
+        md.append("### Files\n*(none)*\n")
+
+    return "\n".join(md).strip() + "\n"
 
 
 def pick_remote_presets(preset_dirs: list[Path]) -> list[str]:
@@ -359,7 +412,7 @@ def pick_remote_presets(preset_dirs: list[Path]) -> list[str]:
                 f"{colors['description']}{len(get_preset_skills(preset_dir)):>6}{reset}",
                 str(preview),
             )))
-        preview_command = "type {4}" if os.name == "nt" else "cat {4}"
+        preview_command = preview_markdown_command("{4}")
         result = subprocess.run(
             [
                 "fzf", "--ansi", "--multi", "--tabstop", "2", "--delimiter", "\t", "--with-nth", "2,3",
@@ -1886,7 +1939,7 @@ def browse_presets(preset_dirs: list[Path]) -> tuple[Optional[str], list[str]]:
                 str(preview),
             )))
 
-        preview_command = f"type {{5}}" if os.name == "nt" else "cat {5}"
+        preview_command = preview_markdown_command("{5}")
         result = subprocess.run(
             [
                 "fzf", "--ansi", "--multi", "--expect", "alt-x,alt-e,alt-r,alt-n,alt-y,alt-m,alt-t", "--tabstop", "2",

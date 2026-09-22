@@ -1,5 +1,5 @@
-"""Interactive questions about presets, skills, and destinations."""
-
+import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -12,10 +12,28 @@ from rich.prompt import Prompt
 from skill_ctl.constants import ALL_PRESETS
 from skill_ctl.config import load_config
 from skill_ctl.registry import projects_using
-from skill_ctl.theme import fzf_color_arg
+from skill_ctl.theme import bat_theme, fzf_color_arg
 from skill_ctl.ui import console, print_error, print_warn
 
 ALL_SKILLS = "0"
+
+
+def _preview_markdown_command(field_placeholder: str = "{3}") -> str:
+    """Render markdown preview using bat or glow when available, falling back to cat/type."""
+    width = '"%FZF_PREVIEW_COLUMNS%"' if sys.platform == "win32" else '"$FZF_PREVIEW_COLUMNS"'
+    theme = shlex.quote(bat_theme(load_config().get("theme")))
+    bat_options = (
+        f'--color=always --paging=never --style=plain --language=md --theme={theme} '
+        f'--squeeze-blank --wrap=character --terminal-width={width}'
+    )
+    if shutil.which("bat"):
+        return f"bat {bat_options} {field_placeholder}"
+    if shutil.which("batcat"):
+        return f"batcat {bat_options} {field_placeholder}"
+    if shutil.which("glow"):
+        return f"glow --style dark {field_placeholder}"
+    command = "type" if sys.platform == "win32" else "cat"
+    return f"{command} {field_placeholder}"
 
 
 def _ask(label: str, **kwargs: object) -> str:
@@ -46,23 +64,42 @@ def _browse_preset_choices(
     with tempfile.TemporaryDirectory(prefix="skctl-preset-picker-") as temporary:
         previews = Path(temporary)
         extra_preview = previews / "extra"
-        extra_preview.write_text(extra[1], encoding="utf-8")
+        extra_text = extra[1]
+        if not extra_text.startswith("#"):
+            extra_text = f"# {extra[0]}\n\n{extra_text}"
+        extra_preview.write_text(extra_text.strip() + "\n", encoding="utf-8")
         rows = [f"0\t{extra[0]}\t{extra_preview}"]
         for index, name in enumerate(choices, 1):
             preset_dir = presets_dir / name if presets_dir else None
             skills = sorted(path.parent.name for path in preset_dir.rglob("SKILL.md")) if preset_dir else []
             projects = projects_using(name)
             preview = previews / str(index)
-            preview.write_text(
-                f"Preset: {name}\nLocation: {preset_dir}\nApplied projects ({len(projects)}):\n"
-                + "\n".join(f"  {project}" for project in projects)
-                + f"\n\nSkills ({len(skills)}):\n"
-                + "\n".join(f"  {skill}" for skill in skills),
-                encoding="utf-8",
-            )
+            md = [
+                f"# {name}",
+                "",
+                f"**Location:** `{preset_dir}`" if preset_dir else "",
+                "",
+            ]
+            if projects:
+                md.append(f"### Applied Projects ({len(projects)})")
+                for project in projects:
+                    md.append(f"- `{project}`")
+                md.append("")
+            else:
+                md.append("### Applied Projects\n*(none)*\n")
+
+            if skills:
+                md.append(f"### Skills ({len(skills)})")
+                for skill in skills:
+                    md.append(f"- **{skill}**")
+                md.append("")
+            else:
+                md.append("### Skills\n*(none)*\n")
+
+            preview.write_text("\n".join(md).strip() + "\n", encoding="utf-8")
             marker = " *" if name == default_preset else ""
             rows.append(f"{index}\t{name}{marker}\t{preview}")
-        preview_command = "type {3}" if sys.platform == "win32" else "cat {3}"
+        preview_command = _preview_markdown_command("{3}")
         result = subprocess.run(
             [
                 "fzf", "--delimiter", "\t", "--with-nth", "2",

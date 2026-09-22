@@ -189,9 +189,9 @@ def _ansi_prefix(style: str) -> str:
 
 
 # bat ships these built in, so no need to check `bat --list-themes` first.
-# tokyo-night has no bat equivalent; Nord is the closest built-in cool-dark theme.
+# Nord matches the default cyan/blue/green palette; tokyo-night also maps to Nord.
 BAT_THEMES: dict[str, str] = {
-    "default": "Monokai Extended",
+    "default": "Nord",
     "dark": "Dracula",
     "light": "GitHub",
     "mono": "ansi",
