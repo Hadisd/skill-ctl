@@ -700,11 +700,31 @@ def detail_lines(data: dict) -> list[str]:
 
 
 def preview_lines(data: dict) -> list[str]:
-    """Include the fetched SKILL.md in fzf's preview, but not in the confirmation."""
-    lines = detail_lines(data)
-    content = str(data.get("metadata", {}).get("content") or "").strip()
+    """Include the fetched SKILL.md in fzf's preview, formatted as Markdown."""
+    metadata = data.get("metadata", {})
+    name = data.get("name", "")
+    lines = [
+        f"# {name}",
+        "",
+        f"- **Remote:** `{data.get('remote', 'skills.sh')}`",
+        f"- **Source:** `{data.get('source', '')}`",
+    ]
+    if data.get("installs") is not None and data.get("installs") != "-":
+        lines.append(f"- **Installs:** {data.get('installs')}")
+    if data.get("stars") is not None:
+        lines.append(f"- **GitHub stars:** {data['stars']:,}")
+    if data.get("updated"):
+        lines.append(f"- **Updated:** {data['updated']}")
+    desc = data.get("description") or metadata.get("description")
+    if desc:
+        lines.extend(("", "### Description", " ".join(str(desc).split())))
+    if metadata.get("path"):
+        lines.extend(("", f"**SKILL.md:** `{metadata['path']}`"))
+    if data.get("url"):
+        lines.extend(("", f"**Details:** <{data['url']}>"))
+    content = str(metadata.get("content") or "").strip()
     if content:
-        lines.extend(("", "--- SKILL.md ---", content))
+        lines.extend(("", "---", "", content))
     return lines
 
 

@@ -190,7 +190,7 @@ def _ansi_prefix(style: str) -> str:
 
 # bat ships these built in, so no need to check `bat --list-themes` first.
 BAT_THEMES: dict[str, str] = {
-    "default": "Monokai Extended Origin",
+    "default": "DarkNeon",
     "dark": "Dracula",
     "light": "Catppuccin Latte",
     "mono": "ansi",
