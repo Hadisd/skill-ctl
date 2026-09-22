@@ -34,7 +34,12 @@ apply_mode: symlink
 
 # 5. Default agents for skills.sh installation
 # If empty []: skills.sh will prompt you interactively with its checklist.
-# If populated (e.g. ["universal", "claude-code"]), uses these without prompting.
+# If populated, uses these without prompting.
+# Example:
+#   default_agents:
+#     - universal
+#     - claude-code
+#     - hermes
 default_agents: []
 
 # 6. Interactive prompt preferences
@@ -53,6 +58,11 @@ prompts:
   ask_add_after_create: true
 
 # 7. Custom agent folder mappings (extends built-in agents)
+# Maps an agent name to its relative skills directory in a project.
+# Example:
+#   custom_agents:
+#     hermes: ".hermes/skills"
+#     my-agent: ".myagent/skills"
 custom_agents: {}
 """
 
@@ -87,6 +97,7 @@ global_skill_dirs:
   - "~/.codex/skills"
   - "~/.cursor/skills"
   - "~/.codeium/windsurf/skills"
+  - "~/.hermes/skills"
 """,
     "theme": """
 # 11. Color theme for skctl's own output (see: skctl theme list)

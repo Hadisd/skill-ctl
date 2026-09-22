@@ -16,6 +16,7 @@ AGENT_DIR_MAP = {
     "codex": ".codex/skills",
     "cline": ".agents/skills",
     "antigravity": ".agents/skills",
+    "hermes": ".hermes/skills",
 }
 
 DEFAULT_TARGETS = [".agents/skills", ".claude/skills"]

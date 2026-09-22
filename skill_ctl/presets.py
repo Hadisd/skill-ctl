@@ -1300,6 +1300,7 @@ def add_installed_to_global(
     force: bool = False,
     skill: Optional[str] = None,
     warn_empty: bool = True,
+    yes: bool = False,
 ) -> int:
     """Pick skills from presets and link/copy them into global agent directories."""
     rows = []
@@ -1374,6 +1375,20 @@ def add_installed_to_global(
     else:
         from skill_ctl.runner import get_detected_global_agents
         dest_rel_dirs = list(dict.fromkeys(agent_map.get(a, f".{a}/skills") for a in get_detected_global_agents()))
+
+    if not yes and sys.stdin.isatty():
+        skill_count = len(skills)
+        names_str = ", ".join(sorted(skills.keys()))
+        dest_labels = [f"~/{d}" for d in dest_rel_dirs]
+        prompt_msg = f"Apply {skill_count} skill{'s' if skill_count != 1 else ''} ({names_str}) globally to {', '.join(dest_labels)}?"
+        try:
+            confirmed = Confirm.ask(prompt_msg, default=True, console=console)
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return 0
+        if not confirmed:
+            print_warn("Cancelled.")
+            return 0
 
     target_project = Path.home()
     copy_mode = use_copy or (config.get("apply_mode") == "copy")

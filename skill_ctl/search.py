@@ -197,6 +197,21 @@ def search(
         if not selected or not inspect_catalog_skill(selected):
             return
 
+        action = selected[0].get("_action") if selected else None
+        target_preset = preset
+        is_global = global_only or (action == "alt-g")
+
+        if action == "alt-p" and not target_preset:
+            from skill_ctl.constants import PRESETS_DIR
+            from skill_ctl.prompts import prompt_preset_or_new
+            names = sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir()) if PRESETS_DIR.is_dir() else []
+            config = load_config()
+            default_p = config.get("default_preset", "default")
+            target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR)
+            if not target_preset:
+                print_warn("No preset selected; installation cancelled.")
+                return
+
         by_source: dict[str, list[str]] = {}
         for skill in selected:
             source = str(skill.get("source") or skill.get("id", ""))
@@ -207,7 +222,20 @@ def search(
             print_error("The selected remote results have no installable source.")
             sys.exit(1)
 
-        target = ensure_preset_dir(preset) if preset else (Path(project).expanduser().resolve() if project else Path.cwd())
+        if is_global and sys.stdin.isatty():
+            from rich.prompt import Confirm
+            all_names = [n for names in by_source.values() for n in names if n != "*"] or [s.get("name", "") for s in selected]
+            names_str = ", ".join(all_names)
+            prompt_msg = f"Install {len(all_names)} remote skill{'s' if len(all_names) != 1 else ''} ({names_str}) globally (~/)?"
+            try:
+                if not Confirm.ask(prompt_msg, default=True, console=console):
+                    print_warn("Installation cancelled.")
+                    return
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                return
+
+        target = ensure_preset_dir(target_preset) if target_preset else (Path.home() if is_global else (Path(project).expanduser().resolve() if project else Path.cwd()))
         installed: list[str] = []
         exit_code = 0
         for source, names in by_source.items():
@@ -215,15 +243,18 @@ def search(
             if "*" not in names:
                 for name in names:
                     args.extend(["--skill", name])
-            if global_only:
+            if is_global:
                 args.append("-g")
             code = run_npx_skills(args, cwd=str(target))
             if code == 0:
                 installed.extend(names)
             else:
                 exit_code = code
-        if installed and preset:
-            maybe_auto_push(f"add {', '.join(installed)} to {preset}")
+        if installed and target_preset:
+            maybe_auto_push(f"add {', '.join(installed)} to {target_preset}")
+            print_success(f"Added {len(installed)} skill{'s' if len(installed) != 1 else ''} to preset '{target_preset}'.")
+        elif installed and is_global:
+            print_success(f"Installed {len(installed)} skill{'s' if len(installed) != 1 else ''} globally.")
         if exit_code != 0:
             sys.exit(exit_code)
         return
@@ -276,16 +307,27 @@ def search(
         print_warn("Nothing picked.")
         return
 
-    if preset:
-        preset_dir = ensure_preset_dir(preset)
-        for r in chosen:
-            src = Path(r["path"])
-            dst = preset_dir / ".agents" / "skills" / r["skill"]
-            if not dst.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(src, dst)
-        print_success(f"Added {len(chosen)} local skill{'s' if len(chosen) != 1 else ''} to preset '{preset}'")
-    elif global_only:
+    action = chosen[0].get("_action") if chosen else None
+
+    if action == "alt-p" or (preset and action != "alt-g"):
+        target_preset = preset
+        if not target_preset:
+            from skill_ctl.constants import PRESETS_DIR
+            from skill_ctl.prompts import prompt_preset_or_new
+            names = sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir()) if PRESETS_DIR.is_dir() else []
+            config = load_config()
+            default_p = config.get("default_preset", "default")
+            target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR)
+            if not target_preset:
+                print_warn("No preset selected; cancelled.")
+                return
+
+        from skill_ctl.presets import install_skills_into_preset
+        target_dir = ensure_preset_dir(target_preset)
+        added = install_skills_into_preset(target_preset, target_dir, chosen)
+        if added:
+            maybe_auto_push(f"add {', '.join(r['skill'] for r in chosen)} to {target_preset}")
+    elif action == "alt-g" or global_only:
         add_installed_to_global(load_config(), skill=",".join(r["skill"] for r in chosen))
     else:
         apply_picked(chosen, project=str(target_project))

@@ -459,7 +459,7 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
         debounced_rows = f"{rows} --debounce {SEARCH_DEBOUNCE}"
         header = (
             f"{'Skill':<{NAME_WIDTH}} {'Popularity':<{METRIC_WIDTH}} {'Source':<{SOURCE_WIDTH}} {'Updated':<{UPDATED_WIDTH}} Remote\n"
-            "Tab · ctrl-a all · ctrl-d none · Alt-A repo · Alt-C query"
+            "Tab select · ctrl-a all · Enter install · Alt-P add to preset · Alt-G global · Alt-A repo"
         )
         result = subprocess.run(
             [
@@ -467,7 +467,7 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
                 "--delimiter", "\t", "--with-nth", "1",
                 "--header", header,
                 "--color", fzf_color_arg(load_config().get("theme")),
-                "--expect", "alt-a",
+                "--expect", "alt-a,alt-p,alt-g",
                 "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
                 "--bind", f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
                 "--bind", f"start:reload({rows})+refresh-preview",
@@ -480,7 +480,7 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
         if result.returncode != 0 or not result.stdout.strip():
             return []
         selected = result.stdout.splitlines()
-        action = selected.pop(0) if selected and selected[0] == "alt-a" else None
+        action = selected.pop(0) if selected and selected[0] in ("alt-a", "alt-p", "alt-g") else None
         if selected and not selected[0]:
             selected.pop(0)
         chosen = []
@@ -493,9 +493,10 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
             except (OSError, ValueError):
                 continue
             skill["_details"] = read_preview(Path(fields[1]))
+            skill["_action"] = action
             chosen.append(skill)
         if action == "alt-a" and chosen:
-            chosen = [{"name": "all skills", "source": chosen[0].get("source") or chosen[0].get("id"), "_all_from_source": True}]
+            chosen = [{"name": "all skills", "source": chosen[0].get("source") or chosen[0].get("id"), "_all_from_source": True, "_action": action}]
         return chosen
 
 

@@ -268,6 +268,7 @@ apply_targets:
   - ".claude/skills"
 
 apply_mode: symlink
+# Example: default_agents: ["universal", "claude-code", "hermes"]
 default_agents: []
 
 prompts:
@@ -284,7 +285,9 @@ global_skill_dirs:
   - "~/.codex/skills"
   - "~/.cursor/skills"
   - "~/.codeium/windsurf/skills"
+  - "~/.hermes/skills"
 
+# Example: custom_agents: { hermes: ".hermes/skills", myagent: ".myagent/skills" }
 custom_agents: {}
 
 # Remote search catalogs (queried concurrently for remote searches)
@@ -336,14 +339,20 @@ Use `--pick` or `-i` to open fzf. The controls are:
 - Press `Tab` to select multiple skills.
 - Press `ctrl-a` to select every visible result.
 - Press `ctrl-d` to clear the selection.
-- Press `Enter` to apply the selection.
+- Press `Enter` to apply / install selected skills to the current project.
+- Press `Alt-P` to add selected skills directly to an existing or new preset (prompts for preset if not specified).
+- Press `Alt-G` to install / apply selected skills globally (`~/.agents/skills`, etc.).
 - Press `Esc` to cancel.
 
 The preview pane displays `SKILL.md`. It uses `bat`, `batcat`, `glow`, or `cat`, in that order. The `bat` preview wraps to the pane width and collapses repeated blank lines.
 
 The location column is dim magenta. Descriptions are dim. Selecting a global result does not apply it again because it is already available globally.
 
-In remote search results, Alt-A opens `npx skills`' picker for the highlighted repository. Alt-C replaces the search query with that repository name.
+In remote search results:
+- `Alt-P` installs the selected remote skills into a preset.
+- `Alt-G` installs the selected remote skills globally.
+- `Alt-A` opens `npx skills`' picker for the highlighted repository.
+- `Alt-C` replaces the search query with that repository name.
 
 Without fzf, `skctl` uses a numbered prompt. Set the picker explicitly if needed:
 

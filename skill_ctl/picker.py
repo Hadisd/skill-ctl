@@ -33,7 +33,7 @@ PICK_DESC_WIDTH = 38
 # Keys worth knowing, spelled out rather than left to be discovered.
 DEFAULT_HEADER = (
     f"{'Skill':<{PICK_NAME_WIDTH}}  {'Location':<{PICK_LOCATION_WIDTH}}  {'Updated':<{PICK_UPDATED_WIDTH}}  Description\n"
-    "Tab · ctrl-a all · ctrl-d none · Enter apply"
+    "Tab select · ctrl-a all · Enter apply · Alt-P add to preset · Alt-G global"
 )
 
 
@@ -194,6 +194,18 @@ def skill_meta(skill_dir: Path) -> tuple[str, str, Optional[float | str]]:
     return name, description, updated_at
 
 
+def format_global_location(path_or_label: str) -> str:
+    """Format global path as a short 'G: <agent>' label for picker and search."""
+    cleaned = path_or_label.removeprefix("global:")
+    parts = Path(cleaned).parts
+    if len(parts) >= 2 and parts[-1] == "skills":
+        agent_part = parts[-2]
+    else:
+        agent_part = parts[-1] if parts else cleaned
+    agent_name = agent_part.lstrip(".")
+    return f"G: {agent_name}" if agent_name else "G: global"
+
+
 def rows_for(preset: str, skills: dict, scope: str = "preset") -> list:
     """Pickable rows for one location's skills, in name order."""
     rows = []
@@ -203,7 +215,7 @@ def rows_for(preset: str, skills: dict, scope: str = "preset") -> list:
             "skill": folder,
             "preset": preset,
             "scope": scope,
-            "location": preset if scope == "preset" else f"global:{preset}",
+            "location": preset if scope == "preset" else format_global_location(preset),
             "name": name,
             "description": description,
             "updated_at": updated_at,
@@ -258,7 +270,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     lines = [
         "\t".join((
             f"{colors['name']}{truncate(row['skill'], PICK_NAME_WIDTH):<{PICK_NAME_WIDTH}}{reset}",
-            f"{colors['location']}{truncate(row.get('location', row['preset']), PICK_LOCATION_WIDTH):<{PICK_LOCATION_WIDTH}}{reset}",
+            f"{colors['location']}{truncate(row.get('location') or row.get('preset', ''), PICK_LOCATION_WIDTH):<{PICK_LOCATION_WIDTH}}{reset}",
             f"{dim}{truncate(format_relative_time(row.get('updated_at'), short=True) or '-', PICK_UPDATED_WIDTH):<{PICK_UPDATED_WIDTH}}{reset}",
             f"{colors['description']}{truncate(row['description'], PICK_DESC_WIDTH):<{PICK_DESC_WIDTH}}{reset}",
             row["path"],
@@ -271,8 +283,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
             "--delimiter", "\t", "--with-nth", "1,2,3,4",
             "--header", header or DEFAULT_HEADER,
             "--color", fzf_color_arg(load_config().get("theme")),
-            # ctrl-a takes everything that is showing, so narrowing by typing and
-            # then taking the lot is two keys; ctrl-d undoes it.
+            "--expect", "alt-p,alt-g",
             "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
             "--preview", preview_command(),
             "--preview-window", "right,55%,wrap",
@@ -282,8 +293,18 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     )
     if result.returncode >= 2 and result.returncode != 130:
         return [], False
+    output_lines = result.stdout.splitlines()
+    action = output_lines.pop(0) if output_lines and output_lines[0] in ("alt-p", "alt-g") else None
+    if output_lines and not output_lines[0]:
+        output_lines.pop(0)
     picked = {
-        line.split("\t")[4] for line in result.stdout.splitlines()
+        line.split("\t")[4] for line in output_lines
         if line.strip() and len(line.split("\t")) >= 5
     }
-    return [row for row in rows if row["path"] in picked], True
+    chosen = []
+    for row in rows:
+        if row["path"] in picked:
+            row_copy = dict(row)
+            row_copy["_action"] = action
+            chosen.append(row_copy)
+    return chosen, True

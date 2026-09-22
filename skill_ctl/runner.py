@@ -20,6 +20,8 @@ def get_detected_global_agents() -> list[str]:
         agents.append("claude-code")
     if (home / ".codeium" / "windsurf").is_dir() or (home / ".windsurf").is_dir():
         agents.append("windsurf")
+    if (home / ".hermes").is_dir():
+        agents.append("hermes")
     return agents
 
 REGISTER_MJS = Path(__file__).parent / "register.mjs"
