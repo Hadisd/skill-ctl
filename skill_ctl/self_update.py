@@ -53,7 +53,7 @@ def parse_release(payload: object) -> Release:
             raise SelfUpdateError("Invalid release asset: expected an object.")
         if asset.get("name") == filename and asset.get("browser_download_url"):
             return Release(version, tag, str(asset["browser_download_url"]))
-    raise SelfUpdateError(f"Release {tag or '<unknown>'} has no matching wheel asset.")
+    return Release(version, tag, f"git+https://github.com/Hadisd/skill-ctl@{tag}")
 
 
 def fetch_latest_release() -> Release:
