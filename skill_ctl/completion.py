@@ -75,6 +75,10 @@ complete -c skctl -n '__skctl_using update' -l all -d 'Update every preset'
 complete -c skctl -n '__skctl_using self-update' -l check -d 'Check for an available update'
 complete -c skctl -n '__skctl_using search' -s g -l global -d 'Search only global skill folders'
 complete -c skctl -n '__skctl_using apply' -s A -l all-presets -d 'Choose from every preset at once'
+complete -c skctl -n '__skctl_using status' -s g -l global -d 'Show global skills status'
+complete -c skctl -n '__skctl_using status' -s a -l all -d 'Show status across all recorded projects'
+complete -c skctl -n '__skctl_using status' -s v -l verbose -d 'Show verbose breakdown of all skills'
+complete -c skctl -n '__skctl_using status' -l json -d 'Output status as JSON'
 """
 
 BASH = f"""# skctl completion for bash.
@@ -104,7 +108,7 @@ _skctl() {{
 
     case "${{COMP_WORDS[1]}}" in
         apply) COMPREPLY=( $(compgen -W "$presets --pick --all-presets --global --force --resync --dry-run" -- "$cur") ) ;;
-        status) COMPREPLY=( $(compgen -W "--project --help" -- "$cur") ) ;;
+        status) COMPREPLY=( $(compgen -W "--project --global --all --verbose --json --help" -- "$cur") ) ;;
         update) COMPREPLY=( $(compgen -W "$presets --preset --global --all --yes" -- "$cur") ) ;;
         self-update) COMPREPLY=( $(compgen -W "--check --yes" -- "$cur") ) ;;
         unapply) COMPREPLY=( $(compgen -W "$presets --global --force --yes" -- "$cur") ) ;;
@@ -146,7 +150,7 @@ _skctl() {{
 
     case "$words[2]" in
         apply) _arguments '--dry-run[Preview changes without writing files]' '--pick[Choose skills]' '--all-presets[Choose from all presets]' '--global[Apply skills globally]' '--force[Replace existing skills]' '--resync[Reapply recorded skills]' '*:preset:_skctl_presets' ;;
-        status) _files -/ ;;
+        status) _values 'option' --project --global --all --verbose --json ;;
         update) _values 'option' --preset --global --all --yes ;;
         self-update) _values 'option' --check --yes ;;
         unapply) _arguments '--global[Remove preset skills globally]' '--force[Delete real directories]' '--yes[Skip confirmation]' '*:preset:_skctl_presets' ;;
