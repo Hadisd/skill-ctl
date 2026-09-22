@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from skill_ctl.catalog import format_relative_time
 from skill_ctl.constants import BASE_DIR
 from skill_ctl.config import load_config
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
@@ -26,11 +27,12 @@ from skill_ctl.prompts import prompt_skills
 PICK_DESC_LIMIT = 160
 PICK_NAME_WIDTH = 22
 PICK_LOCATION_WIDTH = 12
-PICK_DESC_WIDTH = 42
+PICK_UPDATED_WIDTH = 10
+PICK_DESC_WIDTH = 38
 
 # Keys worth knowing, spelled out rather than left to be discovered.
 DEFAULT_HEADER = (
-    "Skill                   Location      Description\n"
+    f"{'Skill':<{PICK_NAME_WIDTH}}  {'Location':<{PICK_LOCATION_WIDTH}}  {'Updated':<{PICK_UPDATED_WIDTH}}  Description\n"
     "Tab · ctrl-a all · ctrl-d none · Enter apply"
 )
 
@@ -42,7 +44,7 @@ def truncate(value: object, width: int) -> str:
 
 def preview_command() -> str:
     """Use an installed Markdown renderer, with plain text as the fallback."""
-    skill_file = r"{4}\SKILL.md" if os.name == "nt" else "{4}/SKILL.md"
+    skill_file = r"{5}\SKILL.md" if os.name == "nt" else "{5}/SKILL.md"
     width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
     theme = shlex.quote(bat_theme(load_config().get("theme")))
     bat_options = (
@@ -97,29 +99,29 @@ def _save_metadata_cache() -> None:
 atexit.register(_save_metadata_cache)
 
 
-def parse_skill_meta(skill_dir: Path) -> tuple[str, str]:
-    """Parse name and description from a skill's SKILL.md frontmatter."""
-    name, description = skill_dir.name, ""
+def parse_skill_meta(skill_dir: Path) -> tuple[str, str, Optional[float | str]]:
+    """Parse name, description, and optional updated date from a skill's SKILL.md frontmatter."""
+    name, description, updated_at = skill_dir.name, "", None
     try:
         text = (skill_dir / "SKILL.md").read_text(encoding="utf-8", errors="replace")[:8000]
     except OSError:
-        return name, description
+        return name, description, updated_at
     if not text.startswith("---"):
-        return name, description
+        return name, description, updated_at
 
     _, _, rest = text.partition("\n")
     block, sep, _ = rest.partition("\n---")
     if not sep:
-        return name, description
+        return name, description, updated_at
 
     # Search reads this metadata for every installed skill. PyYAML is much more
-    # work than the two scalar fields need, especially across large presets.
+    # work than the scalar fields need, especially across large presets.
     values = {}
     needs_yaml = False
     lines = block.splitlines()
     for index, line in enumerate(lines):
         key, marker, value = line.partition(":")
-        if not marker or key not in ("name", "description"):
+        if not marker or key not in ("name", "description", "updated", "updated_at", "date"):
             continue
         value = value.strip()
         if value in ("|", ">", "|-", ">-", "|+", ">+"):
@@ -142,20 +144,20 @@ def parse_skill_meta(skill_dir: Path) -> tuple[str, str]:
             import yaml
             values = yaml.safe_load(block)
         except Exception:
-            return name, description
+            return name, description, updated_at
         if not isinstance(values, dict):
-            return name, description
+            return name, description, updated_at
 
     name = values.get("name") or name
-    description = " ".join(values.get("description", "").split())
-    return name, description
+    description = " ".join(str(values.get("description", "")).split())
+    updated_at = values.get("updated") or values.get("updated_at") or values.get("date")
+    return name, description, updated_at
 
 
-def skill_meta(skill_dir: Path) -> tuple:
-    """The name and description from a skill's SKILL.md frontmatter.
+def skill_meta(skill_dir: Path) -> tuple[str, str, Optional[float | str]]:
+    """The name, description, and update timestamp from a skill's SKILL.md frontmatter/mtime.
 
-    Falls back to the directory name and no description: a skill without readable
-    frontmatter is still a skill, and must stay findable by name.
+    Falls back to the directory name, no description, and file mtime.
     Uses an mtime/size-validated cache for fast repeat searches.
     """
     global _METADATA_CACHE_DIRTY
@@ -164,7 +166,7 @@ def skill_meta(skill_dir: Path) -> tuple:
         resolved = str(skill_file.resolve())
         st = skill_file.stat()
     except OSError:
-        return skill_dir.name, ""
+        return skill_dir.name, "", None
 
     cache = _load_metadata_cache()
     entry = cache.get(resolved)
@@ -173,24 +175,30 @@ def skill_meta(skill_dir: Path) -> tuple:
         and entry.get("mtime_ns") == st.st_mtime_ns
         and entry.get("size") == st.st_size
     ):
-        return entry.get("name", skill_dir.name), entry.get("description", "")
+        return (
+            entry.get("name", skill_dir.name),
+            entry.get("description", ""),
+            entry.get("updated_at", st.st_mtime),
+        )
 
-    name, description = parse_skill_meta(skill_dir)
+    name, description, frontmatter_updated = parse_skill_meta(skill_dir)
+    updated_at = frontmatter_updated or st.st_mtime
     cache[resolved] = {
         "mtime_ns": st.st_mtime_ns,
         "size": st.st_size,
         "name": name,
         "description": description,
+        "updated_at": updated_at,
     }
     _METADATA_CACHE_DIRTY = True
-    return name, description
+    return name, description, updated_at
 
 
 def rows_for(preset: str, skills: dict, scope: str = "preset") -> list:
     """Pickable rows for one location's skills, in name order."""
     rows = []
     for folder, path in sorted(skills.items()):
-        name, description = skill_meta(path)
+        name, description, updated_at = skill_meta(path)
         rows.append({
             "skill": folder,
             "preset": preset,
@@ -198,6 +206,7 @@ def rows_for(preset: str, skills: dict, scope: str = "preset") -> list:
             "location": preset if scope == "preset" else f"global:{preset}",
             "name": name,
             "description": description,
+            "updated_at": updated_at,
             "path": str(path),
         })
     _save_metadata_cache()
@@ -245,10 +254,12 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     """
     colors = picker_ansi(load_config().get("theme"))
     reset = colors["reset"]
+    dim = colors.get("updated", colors.get("description", "\x1b[2m"))
     lines = [
         "\t".join((
             f"{colors['name']}{truncate(row['skill'], PICK_NAME_WIDTH):<{PICK_NAME_WIDTH}}{reset}",
             f"{colors['location']}{truncate(row.get('location', row['preset']), PICK_LOCATION_WIDTH):<{PICK_LOCATION_WIDTH}}{reset}",
+            f"{dim}{truncate(format_relative_time(row.get('updated_at'), short=True) or '-', PICK_UPDATED_WIDTH):<{PICK_UPDATED_WIDTH}}{reset}",
             f"{colors['description']}{truncate(row['description'], PICK_DESC_WIDTH):<{PICK_DESC_WIDTH}}{reset}",
             row["path"],
         ))
@@ -257,7 +268,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     result = subprocess.run(
         [
             "fzf", "--multi", "--ansi", "--tabstop", "2", "--query", query,
-            "--delimiter", "\t", "--with-nth", "1,2,3",
+            "--delimiter", "\t", "--with-nth", "1,2,3,4",
             "--header", header or DEFAULT_HEADER,
             "--color", fzf_color_arg(load_config().get("theme")),
             # ctrl-a takes everything that is showing, so narrowing by typing and
@@ -272,7 +283,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     if result.returncode >= 2 and result.returncode != 130:
         return [], False
     picked = {
-        line.split("\t")[3] for line in result.stdout.splitlines()
-        if line.strip() and len(line.split("\t")) >= 4
+        line.split("\t")[4] for line in result.stdout.splitlines()
+        if line.strip() and len(line.split("\t")) >= 5
     }
     return [row for row in rows if row["path"] in picked], True

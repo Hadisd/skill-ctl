@@ -132,10 +132,10 @@ def search(
         bool,
         typer.Option("--local", "-l", help="Only search local presets and global folders.")
     ] = False,
-    remote_only: Annotated[
-        bool,
-        typer.Option("--remote", "-r", help="Only search skills.sh remote catalog.")
-    ] = False,
+    remote: Annotated[
+        Optional[str],
+        typer.Option("--remote", "-r", help="Search remote catalogs (e.g. skills.sh, skillsmp, or all).")
+    ] = None,
     owner: Annotated[
         Optional[str],
         typer.Option("--owner", help="Search only repositories from a GitHub owner (remote catalog).")
@@ -152,8 +152,12 @@ def search(
         bool,
         typer.Option("--pick", "-i", help="Deprecated; search is already interactive.")
     ] = False,
+    remote_only: Annotated[
+        Optional[bool],
+        typer.Option(hidden=True)
+    ] = None,
 ) -> None:
-    """Search installed preset, global, and skills.sh remote skills.
+    """Search installed preset, global, and remote skills (skills.sh, skillsmp.com).
 
     Opens an interactive picker showing matching local and remote skills.
     Applying or installing what you select routes to the target project, preset,
@@ -165,14 +169,20 @@ def search(
             args.append(query)
         sys.exit(run_npx_skills(args))
 
-    if local_only and remote_only:
+    is_remote = bool(remote) or bool(remote_only)
+
+    if local_only and is_remote:
         print_error("--local and --remote select different sources. Pick one.")
         sys.exit(1)
 
-    if remote_only:
+    if is_remote:
+        remotes_filter = None
+        if remote and str(remote).lower() not in ("default", "true", "1"):
+            remotes_filter = [r.strip() for r in remote.split(",") if r.strip()]
+
         if json_output:
             from skill_ctl.catalog import search as catalog_search
-            results = catalog_search(query or "", owner=owner)
+            results = catalog_search(query or "", owner=owner, remotes=remotes_filter)
             print(jsonlib.dumps(results, indent=2))
             return
 
@@ -182,7 +192,7 @@ def search(
 
         from skill_ctl.catalog import choose as choose_catalog_skill, inspect as inspect_catalog_skill
 
-        selected = choose_catalog_skill(query or "", owner)
+        selected = choose_catalog_skill(query or "", owner, remotes=remotes_filter)
         if not selected or not inspect_catalog_skill(selected):
             return
 
@@ -193,7 +203,7 @@ def search(
             if source:
                 by_source.setdefault(source, []).append("*" if skill.get("_all_from_source") else name)
         if not by_source:
-            print_error("The selected skills.sh results have no installable source.")
+            print_error("The selected remote results have no installable source.")
             sys.exit(1)
 
         target = ensure_preset_dir(preset) if preset else (Path(project).expanduser().resolve() if project else Path.cwd())

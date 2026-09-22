@@ -216,6 +216,8 @@ def preprocess_args(args: list[str]) -> list[str]:
             result.append(load_config().get("default_preset", "default"))
         elif arg in ("-s", "--skill") and bare and args[0] == "apply":
             result.append(SELECT_INTERACTIVELY)
+        elif arg in ("-r", "--remote") and bare and args[0] == "search":
+            result.append("default")
 
     return result
 

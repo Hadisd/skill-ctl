@@ -69,8 +69,7 @@ complete -c skctl -n '__skctl_using apply' -l dry-run -d 'Preview changes withou
 complete -c skctl -s y -l yes -d 'Skip prompts'
 complete -c skctl -n '__skctl_using search' -l npx -d "Use npx skills' own finder instead of skctl's fzf picker"
 complete -c skctl -n '__skctl_using search' -l owner -x -d 'Search one GitHub owner'
-complete -c skctl -n '__skctl_using search' -s l -l local -d 'Search only local presets and global folders'
-complete -c skctl -n '__skctl_using search' -s r -l remote -d 'Search only skills.sh remote catalog'
+complete -c skctl -n '__skctl_using search' -s r -l remote -d 'Search remote catalogs (skills.sh, skillsmp, all)'
 complete -c skctl -n '__skctl_using update' -l all -d 'Update every preset'
 complete -c skctl -n '__skctl_using self-update' -l check -d 'Check for an available update'
 complete -c skctl -n '__skctl_using search' -s g -l global -d 'Search only global skill folders'
@@ -104,6 +103,7 @@ _skctl() {{
         -P|--preset) COMPREPLY=( $(compgen -W "$presets" -- "$cur") ); return ;;
         -a|--agent) COMPREPLY=( $(compgen -W "universal claude claude-code cursor windsurf codex all" -- "$cur") ); return ;;
         -p|--project) COMPREPLY=( $(compgen -d -- "$cur") ); return ;;
+        -r|--remote) COMPREPLY=( $(compgen -W "skills.sh skillsmp all" -- "$cur") ); return ;;
     esac
 
     case "${{COMP_WORDS[1]}}" in
@@ -112,7 +112,7 @@ _skctl() {{
         update) COMPREPLY=( $(compgen -W "$presets --preset --global --all --yes" -- "$cur") ) ;;
         self-update) COMPREPLY=( $(compgen -W "--check --yes" -- "$cur") ) ;;
         unapply) COMPREPLY=( $(compgen -W "$presets --global --force --yes" -- "$cur") ) ;;
-        search) COMPREPLY=( $(compgen -W "--preset --global --local --remote --owner --applied --json --npx" -- "$cur") ) ;;
+        search) COMPREPLY=( $(compgen -W "--preset --global --local --remote --owner --applied --json --npx skills.sh skillsmp all" -- "$cur") ) ;;
         presets|preset) COMPREPLY=( $(compgen -W "list applied create edit clone combine history rename delete export import" -- "$cur") ) ;;
         backup) COMPREPLY=( $(compgen -W "push pull init status --dry-run" -- "$cur") ) ;;
         config) COMPREPLY=( $(compgen -W "show path edit reset" -- "$cur") ) ;;

@@ -207,13 +207,14 @@ def bat_theme(name: Optional[str] = None) -> str:
 
 
 def picker_ansi(name: Optional[str] = None) -> dict[str, str]:
-    """ANSI prefixes for fzf row columns (skill name / location / description),
+    """ANSI prefixes for fzf row columns (skill name / location / updated / description),
     matching the roles used for other output so the picker isn't the one place
     a theme doesn't reach."""
     palette = THEMES[resolve_theme_name(name)]
     return {
         "name": _ansi_prefix(palette["header"]),
         "location": _ansi_prefix(f"dim {palette['accent']}"),
+        "updated": _ansi_prefix("dim"),
         "description": _ansi_prefix("dim"),
         "reset": ANSI_RESET,
     }

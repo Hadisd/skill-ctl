@@ -287,6 +287,11 @@ global_skill_dirs:
 
 custom_agents: {}
 
+# Remote search catalogs (queried concurrently for remote searches)
+search_remotes:
+  - skills.sh
+  - skillsmp
+
 backup:
   auto_push: false
 
@@ -296,20 +301,24 @@ npx:
 
 `global_skill_dirs` controls which global folders appear in search results and the preset creation picker. You may add absolute paths or paths beginning with `~`. Missing folders are ignored.
 
+`search_remotes` controls which remote registries are queried during remote searches (`skills.sh`, `skillsmp`).
+
 ## Search
 
-`skctl search` provides unified discovery across your installed presets, global folders, and the remote `skills.sh` catalog. Matching skills open in an interactive picker with syntax-highlighted previews, GitHub stars, and install counts.
+`skctl search` provides unified discovery across your installed presets, global folders, and remote skill catalogs (including **`skills.sh`** and **`SkillsMP` / skillsmp.com**). Multi-remote searches run concurrently with automatic deduplication, GitHub star counts, and install statistics. Matching skills open in an interactive picker with syntax-highlighted previews.
 
 ```bash
 skctl search                            # browse local skills with fzf
-skctl search typescript                 # search local presets and skills.sh
+skctl search typescript                 # search local presets and all configured remotes
 skctl search react --preset frontend    # search and install/apply into a preset
-skctl search --remote                   # only search the remote skills.sh catalog
+skctl search --remote                   # query all remote catalogs (skills.sh + skillsmp)
+skctl search react --remote skillsmp    # query only SkillsMP (skillsmp.com)
+skctl search react --remote skills.sh   # query only skills.sh
 skctl search --local                    # only search local presets and global folders
 skctl search --applied                  # only show skills already applied to project
 skctl search --global                   # search only global skill folders
 skctl search --json                     # output local matches as JSON
-skctl search react --remote --json      # query skills.sh and output as JSON
+skctl search react --remote --json      # query remotes and output as JSON
 skctl search --npx                      # use npx skills' own interactive finder
 ```
 

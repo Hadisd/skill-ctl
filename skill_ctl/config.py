@@ -94,6 +94,16 @@ global_skill_dirs:
 # this), "catppuccin-mocha", "tokyo-night", "gruvbox"
 theme: default
 """,
+    "search_remotes": """
+# 12. Remote skill search providers for `skctl search --remote`
+search_remotes:
+  - name: "skills.sh"
+    url: "https://skills.sh"
+    enabled: true
+  - name: "skillsmp"
+    url: "https://skillsmp.com"
+    enabled: false
+""",
 }
 
 DEFAULT_CONFIG_YAML += "".join(LATER_SECTIONS.values())
@@ -176,6 +186,10 @@ def load_config() -> dict:
             "~/.cursor/skills",
             "~/.codeium/windsurf/skills",
         ],
+        "search_remotes": [
+            {"name": "skills.sh", "url": "https://skills.sh", "enabled": True},
+            {"name": "skillsmp", "url": "https://skillsmp.com", "enabled": False},
+        ],
     }
 
     for k, v in read_config_file().items():
@@ -232,3 +246,15 @@ def all_target_dirs(config: dict) -> list[str]:
     return list(dict.fromkeys(
         list(get_agent_dir_map(config).values()) + list(config.get("apply_targets", DEFAULT_TARGETS))
     ))
+
+
+def get_search_remotes(config: Optional[dict] = None) -> list[dict]:
+    """Return enabled search remote providers, defaulting to skills.sh."""
+    cfg = config or load_config()
+    remotes = cfg.get("search_remotes")
+    if isinstance(remotes, list) and remotes:
+        return [r for r in remotes if isinstance(r, dict) and r.get("enabled", True)]
+    return [
+        {"name": "skills.sh", "url": "https://skills.sh", "enabled": True},
+    ]
+
