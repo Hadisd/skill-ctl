@@ -78,6 +78,13 @@ python3 -m pip install --user git+https://github.com/Hadisd/skill-ctl
 
 With uv: `uv tool install git+https://github.com/Hadisd/skill-ctl`.
 
+To install a published release without cloning the repository, pass its wheel
+URL to uv:
+
+```bash
+uv tool install https://github.com/Hadisd/skill-ctl/releases/download/v0.1.7/skill_ctl-0.1.7-py3-none-any.whl
+```
+
 Check the installation:
 
 ```bash
@@ -179,6 +186,7 @@ skctl rm                   # choose installed skills to remove
 | `skctl doctor [--all] [--fix]` | Find or remove broken preset links |
 | `skctl backup [push\|pull\|status]` | Manage preset backups |
 | `skctl config [show\|path\|edit\|reset]` | Manage configuration |
+| `skctl theme [list\|set <name>]` | List themes or set the output color theme (`skctl theme <name>` also works) |
 | `skctl completion fish\|bash\|zsh\|powershell` | Print shell completion code |
 
 Aliases: `preset` means `presets`, `rm` means `remove`, `sync` means `backup`, and `restore` means `backup pull`.
@@ -292,8 +300,12 @@ custom_agents: {}
 
 # Remote search catalogs (queried concurrently for remote searches)
 search_remotes:
-  - skills.sh
-  - skillsmp
+  - name: "skills.sh"
+    url: "https://skills.sh"
+    enabled: true
+  - name: "skillsmp"
+    url: "https://skillsmp.com"
+    enabled: false
 
 backup:
   auto_push: false
@@ -304,7 +316,9 @@ npx:
 
 `global_skill_dirs` controls which global folders appear in search results and the preset creation picker. You may add absolute paths or paths beginning with `~`. Missing folders are ignored.
 
-`search_remotes` controls which remote registries are queried during remote searches (`skills.sh`, `skillsmp`).
+`search_remotes` controls which remote registries are queried during remote searches. Set `enabled: false` to keep a provider configured without including it in default remote searches. Name a provider explicitly with `--remote` to search it anyway.
+
+Set the output theme with `skctl theme set <name>`, or use `skctl theme <name>` as a shortcut. `skctl theme list` prints the available themes: `default`, `dark`, `light` (Catppuccin Latte), `tokyo-night`, `catppuccin-mocha`, `gruvbox`, and `mono`. `NO_COLOR` forces `mono` for a command without changing the saved setting.
 
 ## Search
 
@@ -327,7 +341,7 @@ skctl search --npx                      # use npx skills' own interactive finder
 
 Every word in the query must match either the skill name or its description. Names support substring and subsequence matching. Descriptions support substring matching only. Exact name matches rank before fuzzy name matches and description matches.
 
-The table marks project skills with `✓` and labels global skills as `global`. A skill without readable frontmatter remains searchable by its folder name.
+The table marks project skills with `✓` and labels global skills as `global`. Its `Updated` column shows each skill's relative update time. A skill without readable frontmatter remains searchable by its folder name.
 
 `skctl search` always opens fzf. A query is entered into fzf for you, so you can refine it or clear it to browse everything. `--json` prints the matching records instead.
 

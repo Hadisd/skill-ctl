@@ -41,8 +41,26 @@ def set_theme_in_config(name: str) -> None:
 
 
 
-def theme_cmd(name: Annotated[Optional[str], typer.Argument()] = None) -> None:
-    """View or change the color theme. Omit the name to pick interactively."""
+def theme_cmd(
+    action: Annotated[Optional[str], typer.Argument()] = None,
+    name: Annotated[Optional[str], typer.Argument()] = None,
+) -> None:
+    """List or change the color theme. Omit arguments to pick interactively."""
+    if action == "list":
+        if name:
+            print_warn("`skctl theme list` does not take a theme name.")
+            raise SystemExit(1)
+        print("\n".join(THEMES))
+        return
+    if action == "set":
+        if not name:
+            print_warn("Usage: skctl theme set <name>")
+            raise SystemExit(1)
+    elif name:
+        print_warn("Usage: skctl theme [list|set <name>|<name>]")
+        raise SystemExit(1)
+    else:
+        name = action
     current = load_config().get("theme", "default")
     if name is None:
         name = prompt_theme(list(THEMES), current)
