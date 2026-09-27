@@ -526,10 +526,16 @@ def get_global_skills(config: dict) -> list:
     for directory in global_skill_dirs(config):
         if not directory.is_dir():
             continue
-        skills = {
-            entry.name: entry for entry in directory.iterdir()
-            if entry.is_dir() and not entry.name.startswith(".") and (entry / "SKILL.md").is_file()
-        }
+        skills = {}
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    if entry.name.startswith(".") or not entry.is_dir():
+                        continue
+                    if os.path.isfile(os.path.join(entry.path, "SKILL.md")):
+                        skills[entry.name] = Path(entry.path)
+        except OSError:
+            pass
         label = "~/" + directory.relative_to(Path.home()).as_posix() \
             if directory.is_relative_to(Path.home()) else str(directory)
         rows.extend(rows_for(label, skills, scope="global"))

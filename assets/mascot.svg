@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="140" viewBox="0 0 480 140" role="img" aria-label="skill-ctl mascot Dex">
+  <style>
+    @media (prefers-reduced-motion: no-preference) {
+      .breathe { animation: dex-breathe 4.6s cubic-bezier(.4,0,.5,1) infinite; transform-origin: 65px 120px; }
+      .eyes-open { animation: dex-blink 6.8s steps(1, end) infinite; }
+      .eyes-shut { animation: dex-shut 6.8s steps(1, end) infinite; opacity: 0; }
+      .cube { animation: dex-float 3.2s ease-in-out infinite; transform-origin: 65px 85px; }
+      .tail { animation: dex-wag 4.6s ease-in-out infinite; transform-origin: 105px 110px; }
+    }
+    @keyframes dex-breathe {
+      0%, 100% { transform: scale(1, 1); }
+      50% { transform: scale(0.985, 1.025); }
+    }
+    @keyframes dex-blink {
+      0%, 94%, 100% { opacity: 1; }
+      95%, 99% { opacity: 0; }
+    }
+    @keyframes dex-shut {
+      0%, 94%, 100% { opacity: 0; }
+      95%, 99% { opacity: 1; }
+    }
+    @keyframes dex-float {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-3px) rotate(2deg); }
+    }
+    @keyframes dex-wag {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(8deg); }
+    }
+    .text-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-weight: 800; font-size: 32px; fill: #38BDF8; }
+    .text-sub { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-weight: 500; font-size: 14px; fill: #94A3B8; }
+    .text-badge { font-family: monospace; font-size: 12px; fill: #0284C7; }
+  </style>
+
+  <g class="breathe">
+    <!-- Tail -->
+    <path class="tail" fill="#8D5B38" d="M95 105 C115 105, 125 90, 120 75 C115 85, 105 95, 95 100 Z" />
+    
+    <!-- Body -->
+    <ellipse cx="65" cy="90" rx="32" ry="30" fill="#8D5B38" />
+    <ellipse cx="65" cy="92" rx="22" ry="22" fill="#EAD5B8" />
+
+    <!-- Feet / Paws -->
+    <ellipse cx="45" cy="122" rx="10" ry="6" fill="#5C3822" />
+    <ellipse cx="85" cy="122" rx="10" ry="6" fill="#5C3822" />
+
+    <!-- Head -->
+    <ellipse cx="65" cy="52" rx="28" ry="24" fill="#8D5B38" />
+    <!-- Ears -->
+    <circle cx="42" cy="35" r="8" fill="#8D5B38" />
+    <circle cx="42" cy="35" r="5" fill="#EAD5B8" />
+    <circle cx="88" cy="35" r="8" fill="#8D5B38" />
+    <circle cx="88" cy="35" r="5" fill="#EAD5B8" />
+    
+    <!-- Muzzle -->
+    <ellipse cx="65" cy="58" rx="16" ry="12" fill="#EAD5B8" />
+    <!-- Nose -->
+    <path d="M61 52 Q65 50 69 52 Q65 57 61 52 Z" fill="#2B1B17" />
+    <!-- Whiskers -->
+    <line x1="42" y1="57" x2="28" y2="55" stroke="#2B1B17" stroke-width="1.5" stroke-linecap="round" opacity="0.5" />
+    <line x1="42" y1="61" x2="28" y2="62" stroke="#2B1B17" stroke-width="1.5" stroke-linecap="round" opacity="0.5" />
+    <line x1="88" y1="57" x2="102" y2="55" stroke="#2B1B17" stroke-width="1.5" stroke-linecap="round" opacity="0.5" />
+    <line x1="88" y1="61" x2="102" y2="62" stroke="#2B1B17" stroke-width="1.5" stroke-linecap="round" opacity="0.5" />
+
+    <!-- Eyes (Open) -->
+    <g class="eyes-open">
+      <circle cx="52" cy="46" r="4" fill="#2B1B17" />
+      <circle cx="50.5" cy="44.5" r="1.5" fill="#FFFFFF" />
+      <circle cx="78" cy="46" r="4" fill="#2B1B17" />
+      <circle cx="76.5" cy="44.5" r="1.5" fill="#FFFFFF" />
+    </g>
+    <!-- Eyes (Blink) -->
+    <g class="eyes-shut">
+      <path d="M48 46 Q52 50 56 46" stroke="#2B1B17" stroke-width="2.5" stroke-linecap="round" fill="none" />
+      <path d="M74 46 Q78 50 82 46" stroke="#2B1B17" stroke-width="2.5" stroke-linecap="round" fill="none" />
+    </g>
+
+    <!-- Hands holding Skill Cube -->
+    <!-- Glowing Skill Cube -->
+    <g class="cube">
+      <rect x="51" y="75" width="28" height="28" rx="6" fill="#0284C7" />
+      <rect x="53" y="77" width="24" height="24" rx="4" fill="#38BDF8" />
+      <!-- Modular connector dots inside cube -->
+      <circle cx="60" cy="84" r="2.5" fill="#FFFFFF" />
+      <circle cx="70" cy="84" r="2.5" fill="#FFFFFF" />
+      <circle cx="65" cy="94" r="2.5" fill="#FFFFFF" />
+    </g>
+    <!-- Paws holding cube -->
+    <circle cx="48" cy="88" r="6" fill="#5C3822" />
+    <circle cx="82" cy="88" r="6" fill="#5C3822" />
+  </g>
+
+  <!-- Typography -->
+  <text x="150" y="62" class="text-title">skill-ctl</text>
+  <text x="285" y="62" class="text-badge">(skctl)</text>
+  <text x="150" y="92" class="text-sub">Store skills once. Use them where they fit.</text>
+</svg>

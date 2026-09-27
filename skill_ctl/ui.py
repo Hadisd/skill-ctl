@@ -8,20 +8,38 @@ from rich.markup import escape
 
 from skill_ctl.theme import build_theme
 
-_default_theme = build_theme()
-console = Console(theme=_default_theme)
-err_console = Console(stderr=True, theme=_default_theme)
+class _LazyConsole:
+    def __init__(self, stderr: bool = False):
+        self._stderr = stderr
+        self._instance: Optional[Console] = None
+
+    def _get(self) -> Console:
+        if self._instance is None:
+            self._instance = Console(stderr=self._stderr, theme=build_theme(_current_theme_name))
+        return self._instance
+
+    def __getattr__(self, name: str):
+        return getattr(self._get(), name)
+
+
+_current_theme_name: Optional[str] = None
+console = _LazyConsole(stderr=False)
+err_console = _LazyConsole(stderr=True)
 
 _TAG_RE = re.compile(r"\[/?[a-zA-Z_]+\]")
 
 
 def set_theme(name: Optional[str]) -> None:
+    global _current_theme_name
+    _current_theme_name = name
     theme = build_theme(name)
-    console.push_theme(theme, inherit=False)
-    err_console.push_theme(theme, inherit=False)
+    if console._instance is not None:
+        console._instance.push_theme(theme, inherit=False)
+    if err_console._instance is not None:
+        err_console._instance.push_theme(theme, inherit=False)
 
 
-def _safe_print(target_console: Console, text: str) -> None:
+def _safe_print(target_console: _LazyConsole, text: str) -> None:
     """Rich itself can fail to render (e.g. a broken/mismatched optional
     dependency such as rich's own unicode-width tables), which must not
     swallow the message a caller is trying to report. Fall back to plain
@@ -48,17 +66,28 @@ def print_error(text: str) -> None:
     _safe_print(err_console, f"[error]✗[/error]  {escape(text)}")
 
 
-# Backward-compatible re-exports
-from rich.prompt import Prompt
+# Backward-compatible lazy re-exports
 from skill_ctl.constants import ALL_PRESETS
-from skill_ctl.prompts import (
-    prompt_add_source,
-    prompt_apply_type,
-    prompt_destination,
-    prompt_new_preset_name,
-    prompt_preset,
-    prompt_preset_or_new,
-    prompt_skills,
-    prompt_theme,
-)
+
+_PROMPT_SYMBOLS = {
+    "Prompt",
+    "prompt_add_source",
+    "prompt_apply_type",
+    "prompt_destination",
+    "prompt_new_preset_name",
+    "prompt_preset",
+    "prompt_preset_or_new",
+    "prompt_skills",
+    "prompt_theme",
+}
+
+
+def __getattr__(name: str):
+    if name == "Prompt":
+        from rich.prompt import Prompt
+        return Prompt
+    if name in _PROMPT_SYMBOLS:
+        import skill_ctl.prompts as _prompts
+        return getattr(_prompts, name)
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

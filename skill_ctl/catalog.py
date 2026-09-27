@@ -9,9 +9,10 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -21,9 +22,41 @@ import yaml
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from skill_ctl.constants import BASE_DIR
 from skill_ctl.config import load_config, get_search_remotes
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import console, print_error, print_header, print_warn
+
+CACHE_DIR = BASE_DIR / "cache"
+QUERY_CACHE_DIR = CACHE_DIR / "queries"
+REPO_CACHE_DIR = CACHE_DIR / "repos"
+SKILL_CACHE_DIR = CACHE_DIR / "skills"
+QUERY_CACHE_TTL = 3600 * 6  # 6 hours
+REPO_CACHE_TTL = 86400 * 7  # 7 days
+SKILL_CACHE_TTL = 86400 * 7  # 7 days
+
+
+def _read_disk_cache(path: Path, ttl: Optional[float] = None) -> Optional[Any]:
+    """Read JSON from disk cache if present and not expired."""
+    try:
+        if not path.exists():
+            return None
+        if ttl is not None:
+            mtime = path.stat().st_mtime
+            if time.time() - mtime > ttl:
+                return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _write_disk_cache(path: Path, data: Any) -> None:
+    """Write JSON data to disk cache safely."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+    except OSError:
+        pass
 
 # `npx skills` reads the same override, so pointing both at one mirror takes a
 # single variable. It also lets the search be aimed at a local stub in testing.
@@ -68,6 +101,9 @@ def get_json(url: str, timeout: float = 10) -> dict:
     request = Request(url, headers=headers)
     with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read())
+
+
+_DEFAULT_GET_JSON = get_json
 
 
 def parse_github_repo(url_or_str: str) -> Optional[str]:
@@ -165,9 +201,21 @@ def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP
 
 
 def search(query: str, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
-    """Search across all configured or requested remote catalogs concurrently."""
+    """Search across all configured or requested remote catalogs concurrently with disk caching."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []
+
+    q_clean = query.strip()
+    remotes_str = ",".join(sorted(remotes)) if remotes else ""
+    cache_key = hashlib.sha256(f"{q_clean}\0{owner or ''}\0{remotes_str}".encode()).hexdigest()
+    cache_file = QUERY_CACHE_DIR / f"{cache_key}.json"
+
+    is_mocked = globals().get("get_json") is not _DEFAULT_GET_JSON
+    if not is_mocked:
+        ttl = globals().get("QUERY_CACHE_TTL", QUERY_CACHE_TTL)
+        cached = _read_disk_cache(cache_file, ttl=ttl)
+        if cached is not None:
+            return cached
 
     if remotes:
         selected_names = {r.strip().lower() for item in remotes for r in item.split(",") if r.strip()}
@@ -194,6 +242,7 @@ def search(query: str, owner: Optional[str] = None, remotes: Optional[list[str]]
         all_remotes = get_search_remotes()
 
     results_by_key: dict[tuple[str, str], dict] = {}
+    fetch_failed = False
 
     def run_provider(remote_info: dict) -> list[dict]:
         r_type = remote_info.get("type", remote_info.get("name", "")).lower()
@@ -202,38 +251,50 @@ def search(query: str, owner: Optional[str] = None, remotes: Optional[list[str]]
             return search_skillsmp(query, owner=owner, url=r_url or SKILLSMP_URL)
         return search_skills_sh(query, owner=owner, url=r_url or SKILLS_URL)
 
-    with ThreadPoolExecutor(max_workers=max(len(all_remotes), 1)) as pool:
-        futures = {pool.submit(run_provider, r): r for r in all_remotes}
-        for fut in as_completed(futures):
-            try:
-                items = fut.result()
-            except Exception:
-                items = []
-            for item in items:
-                key = (item.get("source", "").lower(), item.get("name", "").lower())
-                if key not in results_by_key:
-                    results_by_key[key] = dict(item)
-                else:
-                    existing = results_by_key[key]
-                    if not existing.get("installs") and item.get("installs"):
-                        existing["installs"] = item["installs"]
-                    if not existing.get("stars") and item.get("stars"):
-                        existing["stars"] = item["stars"]
-                    if not existing.get("updated_at") and item.get("updated_at"):
-                        existing["updated_at"] = item["updated_at"]
-                    if not existing.get("description") and item.get("description"):
-                        existing["description"] = item["description"]
-                    r1 = existing.get("remote", "")
-                    r2 = item.get("remote", "")
-                    if r2 and r2 not in r1:
-                        existing["remote"] = f"{r1}, {r2}"
+    try:
+        with ThreadPoolExecutor(max_workers=max(len(all_remotes), 1)) as pool:
+            futures = {pool.submit(run_provider, r): r for r in all_remotes}
+            for fut in as_completed(futures):
+                try:
+                    items = fut.result()
+                except Exception:
+                    fetch_failed = True
+                    items = []
+                for item in items:
+                    key = (item.get("source", "").lower(), item.get("name", "").lower())
+                    if key not in results_by_key:
+                        results_by_key[key] = dict(item)
+                    else:
+                        existing = results_by_key[key]
+                        if not existing.get("installs") and item.get("installs"):
+                            existing["installs"] = item["installs"]
+                        if not existing.get("stars") and item.get("stars"):
+                            existing["stars"] = item["stars"]
+                        if not existing.get("updated_at") and item.get("updated_at"):
+                            existing["updated_at"] = item["updated_at"]
+                        if not existing.get("description") and item.get("description"):
+                            existing["description"] = item["description"]
+                        r1 = existing.get("remote", "")
+                        r2 = item.get("remote", "")
+                        if r2 and r2 not in r1:
+                            existing["remote"] = f"{r1}, {r2}"
+    except Exception:
+        fetch_failed = True
+
+    if not results_by_key:
+        stale = _read_disk_cache(cache_file, ttl=None)
+        if stale is not None:
+            return stale
 
     def sort_key(skill: dict):
         stars = skill.get("stars") or 0
         installs = skill.get("installs") or 0
         return (max(stars, installs), installs, stars)
 
-    return sorted(results_by_key.values(), key=sort_key, reverse=True)
+    final_results = sorted(results_by_key.values(), key=sort_key, reverse=True)
+    if final_results:
+        _write_disk_cache(cache_file, final_results)
+    return final_results
 
 
 def format_number(value: object) -> str:
@@ -461,6 +522,12 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
             f"{'Skill':<{NAME_WIDTH}} {'Popularity':<{METRIC_WIDTH}} {'Source':<{SOURCE_WIDTH}} {'Updated':<{UPDATED_WIDTH}} Remote\n"
             "Tab select · ctrl-a all · Enter install · Alt-P add to preset · Alt-G global · Alt-A repo"
         )
+        initial_input = None
+        if len(query.strip()) >= MIN_QUERY_LENGTH:
+            initial_rows = write_rows(query.strip(), root, owner, remotes=remotes)
+            if initial_rows:
+                initial_input = "\n".join(initial_rows)
+
         result = subprocess.run(
             [
                 "fzf", "--multi", "--ansi", "--phony", "--disabled", "--query", query,
@@ -474,6 +541,7 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
                 "--bind", f"change:reload({debounced_rows})+refresh-preview",
                 "--preview", preview, "--preview-window", "right,55%,wrap",
             ],
+            input=initial_input,
             stdout=subprocess.PIPE, text=True,
             encoding="utf-8", errors="replace",
         )
@@ -579,10 +647,18 @@ def _fetch_candidates_parallel(
     return None, None
 
 
-def frontmatter(source: str, skill_name: str) -> dict:
+def frontmatter(source: str, skill_name: str, branch: str = "main", timeout: float = 3.0) -> dict:
     repo = github_source(source)
     if not repo:
         return {}
+
+    is_mocked = globals().get("get_json") is not _DEFAULT_GET_JSON
+    skill_key = hashlib.sha256(f"{repo.lower()}:{skill_name.lower()}:{branch}".encode()).hexdigest()
+    skill_cache_file = SKILL_CACHE_DIR / f"{skill_key}.json"
+    if not is_mocked:
+        cached = _read_disk_cache(skill_cache_file, ttl=SKILL_CACHE_TTL)
+        if cached is not None:
+            return cached
 
     candidates = (f"{skill_name}/SKILL.md", f"skills/{skill_name}/SKILL.md", "SKILL.md")
     path, text = _fetch_candidates_parallel(repo, candidates)
@@ -607,23 +683,29 @@ def frontmatter(source: str, skill_name: str) -> dict:
                 path = "SKILL.md" if "SKILL.md" in blob_candidates else blob_candidates[0]
             else:
                 return {}
-            text = _fetch_raw_github_file(repo, path, branch="HEAD", timeout=6.0)
+            text = _fetch_raw_github_file(repo, path, branch=branch, timeout=timeout)
             if not text:
                 return {}
         except (IndexError, KeyError, OSError, URLError, ValueError):
             return {}
 
     if not text.startswith("---"):
-        return {"path": path, "content": text}
+        res = {"path": path, "content": text}
+        _write_disk_cache(skill_cache_file, res)
+        return res
     _, _, remaining = text.partition("\n")
     block, separator, _ = remaining.partition("\n---")
     if not separator:
-        return {"path": path, "content": text}
+        res = {"path": path, "content": text}
+        _write_disk_cache(skill_cache_file, res)
+        return res
     try:
         parsed = yaml.safe_load(block)
     except yaml.YAMLError:
         parsed = {}
-    return {"path": path, "content": text, **(parsed if isinstance(parsed, dict) else {})}
+    res = {"path": path, "content": text, **(parsed if isinstance(parsed, dict) else {})}
+    _write_disk_cache(skill_cache_file, res)
+    return res
 
 
 def details(skill: dict) -> dict:
@@ -640,8 +722,19 @@ def details(skill: dict) -> dict:
             return cached_stars, cached_updated
         if not repo:
             return cached_stars, cached_updated
+        repo_key = hashlib.sha256(repo.lower().encode()).hexdigest()
+        repo_cache_file = REPO_CACHE_DIR / f"{repo_key}.json"
+        is_mocked = globals().get("get_json") is not _DEFAULT_GET_JSON
+        if not is_mocked:
+            cached_repo = _read_disk_cache(repo_cache_file, ttl=REPO_CACHE_TTL)
+            if cached_repo is not None:
+                stars = cached_stars if cached_stars is not None else cached_repo.get("stargazers_count")
+                updated = cached_updated or cached_repo.get("pushed_at") or cached_repo.get("updated_at")
+                return stars, updated
         try:
             repo_data = get_json(f"{GITHUB_API}/repos/{repo}")
+            if not is_mocked:
+                _write_disk_cache(repo_cache_file, repo_data)
             stars = cached_stars if cached_stars is not None else repo_data.get("stargazers_count")
             updated = cached_updated or repo_data.get("pushed_at") or repo_data.get("updated_at")
             return stars, updated
@@ -674,6 +767,54 @@ def details(skill: dict) -> dict:
         "metadata": metadata,
         "url": skill.get("url") or (f"{SKILLS_URL}/{skill.get('id', '')}" if "skills.sh" in remote else ""),
     }
+
+
+def prune_cache(max_size_bytes: int = 50 * 1024 * 1024, max_age_seconds: float = 14 * 86400, force: bool = False) -> None:
+    """Evict expired and excess cache files."""
+    if not CACHE_DIR.exists():
+        return
+    now = time.time()
+    files = []
+    total_size = 0
+    for p in CACHE_DIR.rglob("*.json"):
+        if not p.is_file():
+            continue
+        try:
+            st = p.stat()
+            age = now - st.st_mtime
+            if age > max_age_seconds:
+                p.unlink(missing_ok=True)
+            else:
+                files.append((st.st_mtime, st.st_size, p))
+                total_size += st.st_size
+        except OSError:
+            pass
+
+    if total_size > max_size_bytes:
+        files.sort(key=lambda x: x[0])  # oldest first
+        for _, size, p in files:
+            if total_size <= max_size_bytes:
+                break
+            try:
+                p.unlink(missing_ok=True)
+                total_size -= size
+            except OSError:
+                pass
+
+
+def clear_cache() -> int:
+    """Remove all cached files in ~/.skill-ctl/cache/ and return count of deleted files."""
+    if not CACHE_DIR.exists():
+        return 0
+    count = 0
+    for p in list(CACHE_DIR.rglob("*.json")):
+        if p.is_file():
+            try:
+                p.unlink(missing_ok=True)
+                count += 1
+            except OSError:
+                pass
+    return count
 
 
 def detail_lines(data: dict) -> list[str]:

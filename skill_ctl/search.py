@@ -2,6 +2,7 @@
 
 
 import json as jsonlib
+import os
 import shutil
 import sys
 import tempfile
@@ -79,7 +80,11 @@ def collect(preset: Optional[str], global_only: bool = False) -> list:
             sys.exit(1)
         preset_dirs = [directory]
     elif PRESETS_DIR.is_dir():
-        preset_dirs = sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir())
+        try:
+            with os.scandir(PRESETS_DIR) as entries:
+                preset_dirs = sorted([Path(e.path) for e in entries if e.is_dir() and not e.name.startswith(".")], key=lambda p: p.name)
+        except OSError:
+            preset_dirs = []
     else:
         preset_dirs = []
 
