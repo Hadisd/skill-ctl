@@ -314,6 +314,48 @@ def search(
 
     action = chosen[0].get("_action") if chosen else None
 
+    if action == "alt-x":
+        from rich.prompt import Confirm
+        names = [r["skill"] for r in chosen]
+        names_str = ", ".join(names)
+        prompt_msg = f"Delete {len(chosen)} skill{'s' if len(chosen) != 1 else ''} ({names_str})?"
+        try:
+            if sys.stdin.isatty() and not Confirm.ask(prompt_msg, default=False, console=console):
+                print_warn("Deletion cancelled.")
+                return
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+
+        deleted_count = 0
+        for row in chosen:
+            path = Path(row["path"])
+            if path.is_symlink():
+                try:
+                    path.unlink()
+                    deleted_count += 1
+                except OSError as e:
+                    print_error(f"Could not remove link {path}: {e}")
+            elif path.is_dir():
+                try:
+                    shutil.rmtree(path)
+                    deleted_count += 1
+                except OSError as e:
+                    print_error(f"Could not remove directory {path}: {e}")
+            elif path.exists():
+                try:
+                    path.unlink()
+                    deleted_count += 1
+                except OSError as e:
+                    print_error(f"Could not remove {path}: {e}")
+
+        if deleted_count:
+            print_success(f"Deleted {deleted_count} skill{'s' if deleted_count != 1 else ''}.")
+            presets_affected = {r.get("preset") for r in chosen if r.get("scope") == "preset" and r.get("preset")}
+            for p_name in presets_affected:
+                maybe_auto_push(f"delete skills from {p_name}")
+        return
+
     if action == "alt-p" or (preset and action != "alt-g"):
         target_preset = preset
         if not target_preset:
