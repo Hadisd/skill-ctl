@@ -1,5 +1,6 @@
 """Direct skill commands wrapping npx skills (add, list, remove, update)."""
 
+import shutil
 import sys
 from pathlib import Path
 from typing import Annotated, Optional
