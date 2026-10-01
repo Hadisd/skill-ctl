@@ -14,19 +14,18 @@ from skill_ctl.ui import console, print_header, print_success, print_warn, print
 BRANCH = "main"
 DEFAULT_REPO_NAME = "skill-ctl-presets"
 
-GITIGNORE = """# Written by `skctl backup`. Everything else here is the backup.
+GITIGNORE = """# Ignore all root-level entries by default so cache, machine config, and future files stay local
+/*
+
+# Whitelist only presets and gitignore
+!/.gitignore
+!/presets/
+
+# Ignore noise within presets
 node_modules/
 __pycache__/
 *.pyc
 .DS_Store
-.metadata_cache.json
-
-# Machine-specific: config.yaml is per-machine preference (theme, targets,
-# default_preset...) and applied.json holds this machine's absolute project
-# paths, so neither travels to another machine by default. `skctl backup push
-# --config` opts config.yaml back in; applied.json never syncs.
-/config.yaml
-/applied.json
 """
 
 
@@ -73,13 +72,8 @@ def ensure_local_repo() -> None:
             sys.exit(1)
         print_success(f"Initialized git repository at {BASE_DIR}")
     gitignore = BASE_DIR / ".gitignore"
-    if not gitignore.exists():
+    if not gitignore.exists() or "!/presets/" not in gitignore.read_text(encoding="utf-8"):
         gitignore.write_text(GITIGNORE, encoding="utf-8")
-    elif "/config.yaml" not in gitignore.read_text(encoding="utf-8"):
-        # An older backup wrote the gitignore before config.yaml/applied.json
-        # became machine-specific; extend it rather than clobber any custom rules.
-        with gitignore.open("a", encoding="utf-8") as f:
-            f.write("\n/config.yaml\n/applied.json\n")
 
 
 def keep_empty_presets() -> None:
@@ -273,14 +267,15 @@ def suggest_next_step(url: str) -> tuple[str, str]:
 
 
 def untrack_if_tracked(rel_path: str) -> None:
-    """Drop a file from the next commit without deleting it from disk.
+    """Drop a file or directory from the next commit without deleting it from disk.
 
-    Handles backups made before config.yaml/applied.json were gitignored:
+    Handles backups made before config.yaml/applied.json/cache were gitignored:
     once tracked, `git add -A` keeps re-adding a file regardless of
     .gitignore, so it must be explicitly untracked once.
     """
-    if git(["ls-files", "--error-unmatch", rel_path], capture=True).returncode == 0:
-        git(["rm", "--cached", "-q", rel_path])
+    res = git(["ls-files", rel_path], capture=True)
+    if res.returncode == 0 and res.stdout.strip():
+        git(["rm", "-r", "--cached", "-q", rel_path])
 
 
 def backup_push(
@@ -300,6 +295,8 @@ def backup_push(
 
     keep_empty_presets()
     untrack_if_tracked("applied.json")
+    untrack_if_tracked("cache")
+    untrack_if_tracked(".metadata_cache.json")
     if include_config:
         if git(["add", "-f", "config.yaml"]).returncode != 0:
             sys.exit(1)
