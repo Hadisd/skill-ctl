@@ -97,3 +97,34 @@ def test_destructive_pull_requires_yes_without_terminal(sandbox, remote_backup, 
     accepted = run(*args, "--yes")
     assert accepted.returncode == 0, accepted.stdout + accepted.stderr
     assert content.read_text() == "original preset\n"
+
+
+def test_pull_preview_switching_remote_preserves_local_history(tmp_path, sandbox, remote_backup):
+    home, project, source, run = sandbox
+    remote_copy = tmp_path / "different.git"
+    subprocess.run(["git", "clone", "--bare", "-q", remote_backup, str(remote_copy)], check=True)
+    git_dir = home / ".skill-ctl" / ".git"
+    (git_dir / "local-history-marker").write_text("local history", encoding="utf-8")
+    before = {path.relative_to(git_dir): path.read_bytes() for path in git_dir.rglob("*") if path.is_file()}
+    content = source / "SKILL.md"
+    content.write_text("uncommitted work\n", encoding="utf-8")
+    result = run("backup", "pull", "--repo", remote_copy.as_uri(), "--dry-run", "--yes")
+    assert result.returncode == 0, result.stdout + result.stderr
+    after = {path.relative_to(git_dir): path.read_bytes() for path in git_dir.rglob("*") if path.is_file()}
+    assert after == before
+    assert content.read_text() == "uncommitted work\n"
+
+
+def test_pull_preview_does_not_initialize_local_store(sandbox, remote_backup):
+    home, project, source, run = sandbox
+    base = home / ".skill-ctl"
+    shutil.rmtree(base / ".git")
+    for name in ("config.yaml", ".gitignore", ".backup.lock"):
+        (base / name).unlink(missing_ok=True)
+    result = run("backup", "pull", "--repo", remote_backup, "--dry-run")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "presets/demo/a/SKILL.md" in result.stdout
+    assert not (base / ".git").exists()
+    assert not (base / "config.yaml").exists()
+    assert not (base / ".gitignore").exists()
+    assert not (base / ".backup.lock").exists()

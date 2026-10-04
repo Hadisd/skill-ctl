@@ -3,6 +3,7 @@
 import shutil
 import subprocess
 import sys
+import tempfile
 from contextlib import contextmanager
 from typing import Annotated, Literal, Optional
 
@@ -214,6 +215,9 @@ def backup(
     """
     if action == "status":
         backup_status()
+        return
+    if action == "pull" and dry_run:
+        backup_pull(repo, yes, dry_run, force)
         return
     with backup_lock():
         if action == "init":
@@ -460,6 +464,9 @@ def github_login() -> Optional[str]:
 
 
 def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bool = False) -> None:
+    if dry_run:
+        preview_backup_pull(repo)
+        return
     if repo or not has_repo():
         backup_init(repo, False, yes)
     url = remote_url()
@@ -470,10 +477,6 @@ def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bo
     print_header(f"Fetching backup from {url}")
     if git(["fetch", "origin", BRANCH]).returncode != 0:
         sys.exit(1)
-
-    if dry_run:
-        preview_backup_pull()
-        return
 
     # An empty local repo means a restore: there is no history to merge onto, and
     # whatever sits in ~/.skill-ctl now would block the checkout, so it is replaced.
@@ -511,14 +514,34 @@ def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bo
     print_success("Presets up to date with the backup.")
 
 
-def preview_backup_pull() -> None:
-    """Show the files a restore would add, remove, or change without writing."""
-    head = git(["rev-parse", "--verify", "HEAD"], capture=True)
-    if head.returncode == 0:
-        result = git(["diff", "--name-status", "HEAD", f"origin/{BRANCH}"], capture=True)
-    else:
-        result = git(["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", f"origin/{BRANCH}"], capture=True)
-    lines = [line for line in result.stdout.splitlines() if line.strip()]
+def preview_backup_pull(repo: Optional[str] = None) -> None:
+    """Fetch and compare in a temporary repo, preserving all local Git state."""
+    if shutil.which("git") is None:
+        print_error("'git' not found on PATH. Install git and retry.")
+        sys.exit(1)
+    url = repo_url(repo) if repo else remote_url()
+    if not url:
+        print_error("No backup repository configured. Pass --repo owner/name to preview a backup.")
+        sys.exit(1)
+    print_header(f"Fetching backup preview from {url}")
+    with tempfile.TemporaryDirectory(prefix="skctl-restore-preview-") as directory:
+        def preview_git(args):
+            result = subprocess.run(["git", "-C", directory, *args], capture_output=True, text=True)
+            if result.returncode != 0:
+                console.print((result.stderr or result.stdout).rstrip(), markup=False)
+                sys.exit(result.returncode)
+            return result
+
+        preview_git(["init", "--bare", "-q"])
+        preview_git(["fetch", "--quiet", "--no-tags", url, f"{BRANCH}:refs/heads/incoming"])
+        head = git(["rev-parse", "--verify", "HEAD"], capture=True) if has_repo() else None
+        if head is not None and head.returncode == 0:
+            preview_git(["fetch", "--quiet", "--no-tags", str(BASE_DIR), "HEAD:refs/heads/local"])
+            output = preview_git(["diff", "--name-status", "local", "incoming"]).stdout
+            lines = [line for line in output.splitlines() if line.strip()]
+        else:
+            output = preview_git(["ls-tree", "-r", "--name-only", "incoming"]).stdout
+            lines = [f"A\t{path}" for path in output.splitlines() if path.strip()]
     if not lines:
         print_success("Restore preview: no file changes.")
         return
