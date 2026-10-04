@@ -120,6 +120,11 @@ def record_apply(
     }
     if placed is not None:
         placed = set(placed)
+        previous_paths = previous.get("placements", [
+            f"{target}/{name}" for target in previous.get("targets", [])
+            for name in previous.get("skills", [])
+        ])
+        entry["placements"] = sorted(set(previous_paths) | placed)
         entry["copies"] = sorted((set(previous.get("copies", [])) - placed) | set(copies or []))
         for other_name, other_entry in in_project.items():
             if other_name != preset and "copies" in other_entry:
@@ -153,7 +158,10 @@ def forget_apply(project: Path, preset: str) -> None:
     save_applied(projects)
 
 
-def keep_only(project: Path, preset: str, skills: Iterable[str]) -> None:
+def keep_only(
+    project: Path, preset: str, skills: Iterable[str],
+    placements: Optional[Iterable[str]] = None,
+) -> None:
     """Narrow a recorded entry to the skills still applied, forgetting it if none are.
 
     A partial `unapply` leaves things behind - a copy, or a skill installed by
@@ -171,8 +179,16 @@ def keep_only(project: Path, preset: str, skills: Iterable[str]) -> None:
     remaining = sorted(set(entry.get("skills", [])) & set(skills))
     if remaining:
         entry["skills"] = remaining
+        if placements is not None:
+            entry["placements"] = sorted(path for path in placements if Path(path).name in remaining)
+            remaining_targets = {Path(path).parent.as_posix() for path in entry["placements"]}
+            entry["targets"] = [target for target in entry.get("targets", []) if target in remaining_targets]
+            entry["targets"] += sorted(remaining_targets - set(entry["targets"]))
         if "copies" in entry:
-            entry["copies"] = [path for path in entry["copies"] if Path(path).name in remaining]
+            entry["copies"] = [
+                path for path in entry["copies"]
+                if Path(path).name in remaining and (placements is None or path in entry["placements"])
+            ]
         in_project[preset] = entry
     else:
         in_project.pop(preset, None)

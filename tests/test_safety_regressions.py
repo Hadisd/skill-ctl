@@ -150,3 +150,47 @@ def test_windows_cleanup_preserves_unrelated_executables(tmp_path, monkeypatch):
         assert (directory / "skctl.exe").exists()
         assert not (directory / "skctl.old.exe").exists()
         assert not (directory / "skill-ctl.old.exe").exists()
+
+
+@pytest.mark.parametrize("selection, expected", [
+    (["--skill", "a"], {".agents/skills/b", ".claude/skills/b"}),
+    (["--agent", "universal"], {".claude/skills/a", ".claude/skills/b"}),
+    (["--agent", "universal", "--skill", "a"],
+     {".claude/skills/a", ".agents/skills/b", ".claude/skills/b"}),
+])
+def test_filtered_unapply_preserves_remaining_selection(sandbox, selection, expected):
+    home, project, source, run = sandbox
+    other = source.parent / "b"
+    other.mkdir()
+    (other / "SKILL.md").write_text("second skill\n", encoding="utf-8")
+    assert run("apply", "demo", "--copy").returncode == 0
+    lock_path = project / "skills-lock.json"
+    lock_path.write_text(json.dumps({"version": 1, "skills": {"a": {}, "b": {}}}), encoding="utf-8")
+    result = run("unapply", "demo", "--force", *selection)
+    assert result.returncode == 0, result.stdout + result.stderr
+    record_path = project / "skills-applied.json"
+    assert record_path.exists()
+    entry = json.loads(record_path.read_text())["presets"]["demo"]
+    assert set(entry["skills"]) == {Path(path).name for path in expected}
+    assert set(json.loads(lock_path.read_text())["skills"]) == set(entry["skills"])
+    index = json.loads((home / ".skill-ctl" / "applied.json").read_text())
+    assert "demo" in index["projects"][str(project)]
+    for directory in (".agents", ".claude"):
+        if (project / directory).exists():
+            shutil.rmtree(project / directory)
+    synced = run("apply", "--resync")
+    assert synced.returncode == 0, synced.stdout + synced.stderr
+    actual = {str(path.parent.relative_to(project)) for path in project.rglob("SKILL.md")}
+    assert actual == expected
+
+
+def test_filtered_unapply_revokes_removed_copy_ownership(sandbox):
+    home, project, source, run = sandbox
+    assert run("apply", "demo", "--copy").returncode == 0
+    assert run("unapply", "demo", "--agent", "universal", "--force").returncode == 0
+    custom = project / ".agents" / "skills" / "a"
+    custom.mkdir(parents=True)
+    (custom / "SKILL.md").write_text("new unrelated work\n", encoding="utf-8")
+    result = run("apply", "demo", "--copy")
+    assert result.returncode == 0, result.stderr
+    assert (custom / "SKILL.md").read_text() == "new unrelated work\n"

@@ -1672,10 +1672,20 @@ def resync_project(target_project: Path, recorded: dict, dry_run: bool = False) 
         targets = entry.get("targets") or list(DEFAULT_TARGETS)
         use_copy = entry.get("mode") == "copy"
         owned = owned_copies(recorded, preset_name)
-        if dry_run:
-            preview_apply(target_project, preset_name, wanted, targets, use_copy, False, owned)
+        if "placements" in entry:
+            by_target = {}
+            for path in entry["placements"]:
+                name = Path(path).name
+                if name in wanted:
+                    target = Path(path).parent.as_posix()
+                    by_target.setdefault(target, {})[name] = wanted[name]
         else:
-            link_skills(target_project, preset_name, wanted, targets, use_copy, owned=owned)
+            by_target = {target: wanted for target in targets}
+        for target, selected in by_target.items():
+            if dry_run:
+                preview_apply(target_project, preset_name, selected, [target], use_copy, False, owned)
+            else:
+                link_skills(target_project, preset_name, selected, [target], use_copy, owned=owned)
 
 
 def unapply(
@@ -1807,6 +1817,7 @@ def unapply_one(
 
     skills = get_preset_skills(preset_dir) if preset_dir.exists() else {}
     names = sorted(set(skills) | recorded_names)
+    all_names = list(names)
     if skill_filter:
         fset = set(skill_filter)
         names = [n for n in names if n in fset]
@@ -1818,14 +1829,15 @@ def unapply_one(
         return
 
     agent_map = get_agent_dir_map(config)
+    remaining_dirs = list(dict.fromkeys(
+        project_skill_dirs(target_project, config) + list(entry.get("targets", []))
+    ))
     if agent and agent not in ("*", "all"):
         target_dirs = [agent_map.get(agent, f".{agent}/skills")]
     else:
         # No agent, or '*'/'all' as accepted by `apply`: sweep every directory this
         # project actually has, plus any the record names that are already gone.
-        target_dirs = list(dict.fromkeys(
-            project_skill_dirs(target_project, config) + list(entry.get("targets", []))
-        ))
+        target_dirs = remaining_dirs
 
     is_home = target_project == Path.home()
     target_label = "globally (~/)" if is_home else f"from project at {target_project}"
@@ -1889,7 +1901,12 @@ def unapply_one(
         if pruned:
             print_success(f"Removed empty {pruned.relative_to(target_project)}/")
 
-    unlocked = prune_lockfile(target_project, removed_names)
+    remaining_paths = {
+        f"{directory}/{name}" for directory in remaining_dirs for name in all_names
+        if (target_project / directory / name).exists() or (target_project / directory / name).is_symlink()
+    }
+    left_behind.update(Path(path).name for path in remaining_paths)
+    unlocked = prune_lockfile(target_project, removed_names - left_behind)
     if unlocked:
         print_success(f"Dropped {unlocked} entries from skills-lock.json")
 
@@ -1897,7 +1914,7 @@ def unapply_one(
         # The record is the only thing that can still name what stayed - a copy of
         # a skill the preset has since dropped has nothing else pointing at it - so
         # keep the entry, naming just those, until a --force run clears them.
-        keep_only(target_project, target_preset, left_behind)
+        keep_only(target_project, target_preset, left_behind, placements=remaining_paths)
     else:
         forget_apply(target_project, target_preset)
     print_header(f"Unapplied preset '{target_preset}' ({removed} removed, {skipped} skipped).")

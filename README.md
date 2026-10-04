@@ -444,6 +444,9 @@ The project record is separate from `skills-lock.json`. The upstream file stores
 
 Repeated applications merge their skill and target lists. If an operation cannot place a skill, the record does not claim it. An incomplete `unapply` keeps the names of any copies or unrelated directories left in place.
 
+Filtered `unapply` preserves each remaining skill's destinations, so resync
+restores that selection without reapplying removed skills or agent targets.
+
 `skctl` also indexes project records in `~/.skill-ctl/applied.json`. This index lets `doctor --all` and `presets delete` find affected projects. A cloned project adds itself to the index the first time `skctl` reads its record.
 
 ## Removing presets
