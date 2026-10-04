@@ -194,3 +194,70 @@ def test_filtered_unapply_revokes_removed_copy_ownership(sandbox):
     result = run("apply", "demo", "--copy")
     assert result.returncode == 0, result.stderr
     assert (custom / "SKILL.md").read_text() == "new unrelated work\n"
+
+
+@pytest.mark.parametrize("global_apply", [False, True])
+def test_rename_keeps_absolute_relative_and_custom_agent_links_working(sandbox, global_apply):
+    home, project, source, run = sandbox
+    flags = ["--global"] if global_apply else []
+    destination = home if global_apply else project
+    assert run("apply", "demo", *flags).returncode == 0
+    assert run("apply", "demo", "--agent", "goose", *flags).returncode == 0
+    relative = destination / ".agents" / "skills" / "a"
+    relative.unlink()
+    relative.symlink_to(os.path.relpath(source, relative.parent), target_is_directory=True)
+    unrelated = destination / ".cursor" / "skills" / "unrelated"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.symlink_to(project, target_is_directory=True)
+    result = run("presets", "rename", "demo", "renamed")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not os.path.isabs(os.readlink(relative))
+    for directory in (".agents", ".goose"):
+        link = destination / directory / "skills" / "a"
+        assert link.is_symlink()
+        assert (link / "SKILL.md").read_text() == "original preset\n"
+    assert unrelated.resolve() == project
+    assert run("unapply", "renamed", *flags).returncode == 0
+    assert not relative.is_symlink()
+    assert not (destination / ".goose" / "skills" / "a").is_symlink()
+
+
+def test_rename_keeps_internal_absolute_skill_links_working(sandbox):
+    home, project, source, run = sandbox
+    alias = source.parent / ".claude" / "skills" / "a"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(source, target_is_directory=True)
+    assert run("apply", "demo").returncode == 0
+    result = run("presets", "rename", "demo", "renamed")
+    assert result.returncode == 0, result.stdout + result.stderr
+    moved_alias = home / ".skill-ctl" / "presets" / "renamed" / ".claude" / "skills" / "a"
+    assert (moved_alias / "SKILL.md").read_text() == "original preset\n"
+    assert (project / ".agents" / "skills" / "a" / "SKILL.md").read_text() == "original preset\n"
+
+
+def test_rename_rolls_back_when_link_replacement_fails(sandbox, monkeypatch):
+    from skill_ctl.linker import rename_preset_directory
+
+    home, project, source, run = sandbox
+    targets = [".agents/skills", ".claude/skills"]
+    for target in targets:
+        directory = project / target
+        directory.mkdir(parents=True)
+        (directory / "a").symlink_to(source, target_is_directory=True)
+    replace = Path.replace
+
+    def fail_second_replacement(path, destination):
+        if path.name == "updated" and ".claude" in destination.parts:
+            raise PermissionError("cannot replace link")
+        return replace(path, destination)
+
+    monkeypatch.setattr(Path, "replace", fail_second_replacement)
+    old = source.parent
+    new = old.with_name("renamed")
+    with pytest.raises(PermissionError, match="cannot replace link"):
+        rename_preset_directory(old, new, {project: targets})
+    assert old.is_dir()
+    assert not new.exists()
+    for target in targets:
+        assert (project / target / "a" / "SKILL.md").read_text() == "original preset\n"
+    assert not list(project.rglob(".skctl-rename-*"))

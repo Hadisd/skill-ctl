@@ -34,7 +34,7 @@ from skill_ctl.config import load_config, get_agent_dir_map, all_target_dirs, gl
 from skill_ctl.ui import console, print_header, print_success, print_warn, print_error
 from skill_ctl.prompts import prompt_apply_destination, prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
 from skill_ctl.archive import export_preset as write_archive, safe_extract_preset, preset_changes
-from skill_ctl.linker import apply_skills, links_into_preset, prune_lockfile, prune_empty_dirs, skill_kinds, owned_copies
+from skill_ctl.linker import apply_skills, links_into_preset, prune_lockfile, prune_empty_dirs, skill_kinds, owned_copies, rename_preset_directory
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
 from skill_ctl.runner import run_npx_skills
 # Re-exported: it lives in its own module so callers that only count skills
@@ -2226,9 +2226,18 @@ def presets(
         if new_dir.exists():
             print_error(f"Preset '{new_name}' already exists.")
             sys.exit(1)
-        old_dir.rename(new_dir)
-
         applied = load_applied()
+        projects = {
+            Path(path): list(dict.fromkeys(
+                project_skill_dirs(Path(path), config) + list(presets_data[name].get("targets", []))
+            ))
+            for path, presets_data in applied.items() if name in presets_data and Path(path).is_dir()
+        }
+        try:
+            rename_preset_directory(old_dir, new_dir, projects)
+        except OSError as error:
+            print_error(f"Could not rename preset '{name}': {error}")
+            sys.exit(1)
         for path, presets_data in list(applied.items()):
             if name not in presets_data:
                 continue

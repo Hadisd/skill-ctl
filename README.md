@@ -463,6 +463,9 @@ skctl doctor --all --fix
 
 Copied skills require `skctl unapply <preset> --force` because they are directories rather than links.
 
+Renaming a preset updates links in recorded projects and global agent folders,
+including relative links and custom agent targets.
+
 To remove skills from the preset itself, omit the skill name to open fzf:
 
 ```bash

@@ -3,6 +3,8 @@
 import json
 import os
 import shutil
+import tempfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -15,6 +17,56 @@ def links_into_preset(path: Path, preset_dir: Path) -> bool:
     target = Path(os.path.normpath(os.path.join(path.parent, os.readlink(path))))
     bases = {preset_dir, preset_dir.resolve()}
     return any(base in candidate.parents for candidate in (target, path.resolve()) for base in bases)
+
+
+def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, list[str]]) -> None:
+    """Move a preset and retarget its links, rolling back on replacement failure."""
+    links = {path for path in old_dir.rglob("*") if path.is_symlink()}
+    for project, targets in projects.items():
+        for target in targets:
+            directory = project / target
+            if directory.is_symlink():
+                links.add(directory)
+            if directory.is_dir():
+                links.update(path for path in directory.iterdir() if path.is_symlink())
+    links = {path.parent.resolve() / path.name for path in links}
+    bases = {
+        old_dir.absolute(): new_dir.absolute(),
+        old_dir.parent.resolve() / old_dir.name: new_dir.parent.resolve() / new_dir.name,
+    }
+    with ExitStack() as cleanup:
+        replacements = []
+        for link in sorted(links):
+            original = os.readlink(link)
+            target = Path(os.path.normpath(os.path.join(link.parent, original)))
+            for old_base, new_base in bases.items():
+                if not target.is_relative_to(old_base):
+                    continue
+                new_target = new_base / target.relative_to(old_base)
+                internal = link.is_relative_to(old_base)
+                moved_link = new_base / link.relative_to(old_base) if internal else link
+                replacement = str(new_target) if os.path.isabs(original) else os.path.relpath(new_target, moved_link.parent)
+                temporary_parent = old_dir.parent if internal else link.parent
+                temporary = Path(cleanup.enter_context(tempfile.TemporaryDirectory(
+                    prefix=".skctl-rename-", dir=temporary_parent,
+                )))
+                updated = temporary / "updated"
+                backup = temporary / "original"
+                updated.symlink_to(replacement, target_is_directory=link.is_dir())
+                backup.symlink_to(original, target_is_directory=link.is_dir())
+                replacements.append((moved_link, updated, backup))
+                break
+        old_dir.rename(new_dir)
+        replaced = []
+        try:
+            for link, updated, backup in replacements:
+                updated.replace(link)
+                replaced.append((link, backup))
+        except OSError:
+            for link, backup in reversed(replaced):
+                backup.replace(link)
+            new_dir.rename(old_dir)
+            raise
 
 
 def prune_lockfile(project: Path, removed_names: set[str]) -> int:
