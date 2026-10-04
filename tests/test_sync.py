@@ -94,6 +94,43 @@ def test_sync_merges_independent_edits_and_deletions(tmp_path, remote):
     assert "desktop changes" in git(second, "log", "--format=%s")
 
 
+def test_sync_handles_utf8_paths_with_windows_default_encoding(tmp_path, remote):
+    first, second = pair(tmp_path, remote)
+    name = "\u540d-skill"
+    skill(first, name, "# Unicode filename\n")
+    run(first, "sync")
+    skill(second, "local-skill", "# local work\n")
+    # Exercise the real Git subprocesses with Windows' CP1252 text default.
+    # The UTF-8 filename includes 0x8d, which CP1252 cannot decode.
+    bootstrap = (
+        "import subprocess; subprocess._text_encoding = lambda: 'cp1252'; "
+        "from skill_ctl.cli import main; main()"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", bootstrap, "sync"], env=second, cwd=second["HOME"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Presets synced" in result.stdout
+    assert (base(second) / f"presets/demo/.agents/skills/{name}/SKILL.md").read_text() == "# Unicode filename\n"
+    run(first, "sync")
+    assert (base(first) / "presets/demo/.agents/skills/local-skill/SKILL.md").read_text() == "# local work\n"
+
+
+def test_git_capture_handles_invalid_utf8_output(tmp_path, remote, monkeypatch):
+    import skill_ctl.backup as backup
+
+    first, _ = pair(tmp_path, remote)
+    content = base(first) / "presets/demo/.agents/skills/tdd/SKILL.md"
+    content.write_bytes(b"# title\ninvalid byte: \xff\n")
+    git(first, "add", "presets")
+    git(first, "commit", "-m", "non-UTF8 skill content")
+    monkeypatch.setattr(backup, "BASE_DIR", base(first))
+    result = backup.git(["show", "HEAD:presets/demo/.agents/skills/tdd/SKILL.md"], capture=True)
+    assert result.returncode == 0
+    assert result.stdout == "# title\ninvalid byte: \ufffd\n"
+
+
 def test_sync_conflict_aborts_preserves_versions_and_can_be_resolved(tmp_path, remote):
     first, second = pair(tmp_path, remote)
     skill(first, content="# laptop version\n")

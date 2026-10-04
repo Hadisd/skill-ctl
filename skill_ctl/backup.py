@@ -41,6 +41,9 @@ def git(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
         ["git", "-C", str(BASE_DIR)] + args,
         capture_output=capture,
         text=True,
+        # Git's raw UTF-8 paths must not use Windows' locale-dependent codec.
+        encoding="utf-8",
+        errors="replace",
     )
 
 
@@ -526,7 +529,10 @@ def preview_backup_pull(repo: Optional[str] = None) -> None:
     print_header(f"Fetching backup preview from {url}")
     with tempfile.TemporaryDirectory(prefix="skctl-restore-preview-") as directory:
         def preview_git(args):
-            result = subprocess.run(["git", "-C", directory, *args], capture_output=True, text=True)
+            result = subprocess.run(
+                ["git", "-C", directory, *args], capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
             if result.returncode != 0:
                 console.print((result.stderr or result.stdout).rstrip(), markup=False)
                 sys.exit(result.returncode)
