@@ -178,10 +178,11 @@ skctl rm                   # choose installed skills to remove
 | `skctl version` | Print the installed skctl version (also `--version`, `-V`) |
 | `skctl doctor [--all] [--fix]` | Find or remove broken preset links |
 | `skctl backup [push\|pull\|status]` | Manage preset backups |
+| `skctl sync [status] [--dry-run]` | Merge and exchange preset changes between devices |
 | `skctl config [show\|path\|edit\|reset]` | Manage configuration |
 | `skctl completion fish\|bash\|zsh\|powershell` | Print shell completion code |
 
-Aliases: `preset` means `presets`, `rm` means `remove`, `sync` means `backup`, and `restore` means `backup pull`.
+Aliases: `preset` means `presets`, `rm` means `remove`, and `restore` means `backup pull`. Legacy `sync push`, `sync pull`, and `sync init` still run the corresponding backup actions.
 
 ## Preset storage
 
@@ -552,6 +553,47 @@ backup:
 ```
 
 A failed automatic push prints a warning and does not undo the local command.
+
+## Sync between devices
+
+Connect each device to the same backup repository, then sync:
+
+```bash
+skctl backup init --repo owner/skill-ctl-presets
+skctl sync
+skctl sync --dry-run       # fetch and preview incoming and outgoing changes
+skctl sync status          # fetch and report current sync state
+skctl sync -m "add testing skills"
+```
+
+`sync` commits local preset changes, fetches the backup, merges compatible
+changes, and pushes the combined result. Run it on the other device to receive
+those changes. An empty backup is populated from local presets; a fresh device
+receives the backup and keeps any compatible local presets.
+
+Changes to different files merge automatically. If both devices edit the same
+content incompatibly, sync aborts the merge and exits with an error. Your local
+version remains committed, the fetched version remains in `origin/main`, and
+the remote stays unchanged. Sync prints the conflicting paths and the Git
+commands needed to resolve them. After resolving and committing the merge,
+run `skctl sync` again. Sync never force-pushes.
+
+Dry runs and status fetch Git metadata without changing presets, making
+commits, or pushing. A preview lists pending local changes and incoming and
+outgoing committed changes; it does not guarantee that a merge will be conflict-free.
+
+Configuration, caches, and the absolute project paths in `applied.json` stay
+local. If an older backup includes files outside presets, such as `config.yaml`
+from `backup push --config`, sync stops before merging. Remove those files from
+the backup or use `backup pull` for an explicit restore.
+
+Symlinked projects receive synced changes to existing skill contents. Copied
+skills need `skctl apply --resync`; changes to preset membership still require
+selecting or removing the affected project skills.
+
+Sync and backup writes use a shared lock to prevent overlapping operations,
+including background automatic pushes. Automatic backup still pushes only;
+two-way sync runs explicitly with `skctl sync`.
 
 ## Shell completion
 

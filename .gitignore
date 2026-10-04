@@ -3,7 +3,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-tests/
+tests/*
+!tests/test_sync.py
 skill*.json
 tui.md
 

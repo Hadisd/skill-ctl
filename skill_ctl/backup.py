@@ -3,6 +3,7 @@
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from typing import Annotated, Literal, Optional
 
 import typer
@@ -44,6 +45,38 @@ def git(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
 
 def has_repo() -> bool:
     return (BASE_DIR / ".git").is_dir()
+
+
+@contextmanager
+def backup_lock():
+    """Serialize backup and sync operations, including background pushes."""
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    with (BASE_DIR / ".backup.lock").open("a+b") as lock:
+        if sys.platform == "win32":
+            import msvcrt
+
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            acquire = lambda: msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            release = lambda: msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            acquire = lambda: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            release = lambda: fcntl.flock(lock, fcntl.LOCK_UN)
+        try:
+            acquire()
+        except OSError:
+            print_error("Another backup or sync is running. Try again when it finishes.")
+            raise SystemExit(1)
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                lock.seek(0)
+            release()
 
 
 def remote_url() -> Optional[str]:
@@ -179,14 +212,16 @@ def backup(
     skips that and overwrites the remote with what's here instead - use it
     when this machine's presets are the ones you want to keep.
     """
-    if action == "init":
-        backup_init(repo, public, yes)
-    elif action == "push":
-        backup_push(message, repo, public, include_config, force, yes)
-    elif action == "pull":
-        backup_pull(repo, yes, dry_run, force)
-    else:
+    if action == "status":
         backup_status()
+        return
+    with backup_lock():
+        if action == "init":
+            backup_init(repo, public, yes)
+        elif action == "push":
+            backup_push(message, repo, public, include_config, force, yes)
+        else:
+            backup_pull(repo, yes, dry_run, force)
 
 
 def backup_init(repo: Optional[str], public: bool, yes: bool = False) -> None:
@@ -293,23 +328,7 @@ def backup_push(
     else:
         ensure_local_repo()
 
-    keep_empty_presets()
-    untrack_if_tracked("applied.json")
-    untrack_if_tracked("cache")
-    untrack_if_tracked(".metadata_cache.json")
-    if include_config:
-        if git(["add", "-f", "config.yaml"]).returncode != 0:
-            sys.exit(1)
-    else:
-        untrack_if_tracked("config.yaml")
-    if git(["add", "-A"]).returncode != 0:
-        sys.exit(1)
-
-    staged = git(["diff", "--cached", "--quiet"]).returncode
-    if staged == 0:
-        print_warn("Nothing changed since the last backup.")
-    elif git(["commit", "-m", message or "backup presets"]).returncode != 0:
-        sys.exit(1)
+    commit_presets(message or "backup presets", include_config)
 
     url = remote_url()
     push_args = ["push", "-u", "origin", BRANCH]
@@ -330,6 +349,37 @@ def backup_push(
         explain_push_failure(result.stderr or "", url or "")
         sys.exit(result.returncode)
     print_success("Presets backed up.")
+
+
+def commit_presets(message: str, include_config: bool = False, presets_only: bool = False) -> None:
+    """Record local preset changes while keeping machine-specific files local."""
+    keep_empty_presets()
+    untrack_if_tracked("applied.json")
+    untrack_if_tracked("cache")
+    untrack_if_tracked(".metadata_cache.json")
+    if include_config:
+        if git(["add", "-f", "config.yaml"]).returncode != 0:
+            sys.exit(1)
+    else:
+        untrack_if_tracked("config.yaml")
+    if git(["add", "-A"]).returncode != 0:
+        sys.exit(1)
+    if presets_only:
+        paths = git(["ls-files", "-z"], capture=True)
+        if paths.returncode != 0:
+            sys.exit(paths.returncode)
+        for path in paths.stdout.split("\0"):
+            if path and path != ".gitignore" and not path.startswith("presets/"):
+                if git(["rm", "--cached", "-q", "--", path]).returncode != 0:
+                    sys.exit(1)
+
+    staged = git(["diff", "--cached", "--quiet"]).returncode
+    if staged == 0:
+        print_warn("Nothing changed since the last backup.")
+    elif staged != 1:
+        sys.exit(staged)
+    elif git(["commit", "-m", message]).returncode != 0:
+        sys.exit(1)
 
 
 def confirm_force_push(url: Optional[str], yes: bool) -> bool:
@@ -394,7 +444,8 @@ def maybe_auto_push(what: str, background: bool = True) -> None:
         except OSError:
             pass
     try:
-        backup_push(what, None, False)
+        with backup_lock():
+            backup_push(what, None, False)
     except SystemExit:
         print_warn("Auto-backup failed; run `skctl backup push` when you have a moment.")
 

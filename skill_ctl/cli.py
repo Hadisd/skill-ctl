@@ -34,6 +34,7 @@ SUBCOMMAND_LOADERS = {
     "config": ("skill_ctl.config_commands", "config_cmd"),
     "theme": ("skill_ctl.config_commands", "theme_cmd"),
     "backup": ("skill_ctl.backup", "backup"),
+    "sync": ("skill_ctl.sync", "sync"),
     "doctor": ("skill_ctl.doctor", "doctor"),
     "completion": ("skill_ctl.completion", "completion"),
     "self-update": ("skill_ctl.self_update", "self_update"),
@@ -52,6 +53,7 @@ _LAZY_EXPORTS = {
     "get_preset_skills": ("skill_ctl.presets", "get_preset_skills"),
     "search": ("skill_ctl.search", "search"),
     "backup": ("skill_ctl.backup", "backup"),
+    "sync": ("skill_ctl.sync", "sync"),
     "doctor": ("skill_ctl.doctor", "doctor"),
     "completion": ("skill_ctl.completion", "completion"),
     "config_cmd": ("skill_ctl.config_commands", "config_cmd"),
@@ -78,7 +80,7 @@ def get_all_commands() -> dict:
     return commands
 
 
-SUBCOMMAND_ALIASES = {"preset": "presets", "rm": "remove", "sync": "backup"}
+SUBCOMMAND_ALIASES = {"preset": "presets", "rm": "remove"}
 
 # Aliases that also imply the action, so `skctl restore` never means `backup push`.
 SUBCOMMAND_EXPANSIONS = {"restore": ["backup", "pull"]}
@@ -103,6 +105,7 @@ ROOT_COMMAND_GROUPS = (
         ("config", "View and edit configuration"),
         ("theme", "View or change the color theme"),
         ("backup", "Back up or restore presets"),
+        ("sync", "Sync presets between devices"),
         ("doctor", "Find broken skill links"),
         ("completion", "Print shell completion code"),
         ("self-update", "Check for and install a new skctl release"),
@@ -199,7 +202,10 @@ def preprocess_args(args: list[str]) -> list[str]:
         args = ["add"] + rest
 
     # 3. Subcommand aliases.
-    if args and args[0] in SUBCOMMAND_ALIASES:
+    if args[:1] == ["sync"] and args[1:2] in (["push"], ["pull"], ["init"]):
+        # Preserve explicit actions from when sync was an alias for backup.
+        args = ["backup"] + args[1:]
+    elif args and args[0] in SUBCOMMAND_ALIASES:
         args = [SUBCOMMAND_ALIASES[args[0]]] + args[1:]
     elif args and args[0] in SUBCOMMAND_EXPANSIONS:
         args = SUBCOMMAND_EXPANSIONS[args[0]] + args[1:]
@@ -344,10 +350,11 @@ def main() -> None:
         from skill_ctl import __version__
         print(f"skctl {__version__}")
         return
-    dry_run = cleaned_args[:1] == ["apply"] and "--dry-run" in cleaned_args
+    dry_run = cleaned_args[:1] in (["apply"], ["sync"]) and "--dry-run" in cleaned_args
+    sync_status = cleaned_args[:2] == ["sync", "status"]
     update_check = cleaned_args[:1] == ["self-update"] and "--check" in cleaned_args
     # Dry runs and update checks must not create or migrate config.yaml.
-    if not (dry_run or update_check):
+    if not (dry_run or update_check or sync_status):
         ensure_config()
     set_theme(load_config().get("theme"))
 

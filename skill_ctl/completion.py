@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Optional
 
 import typer
 
-COMMANDS = "add apply unapply presets status list remove update self-update search config theme backup doctor completion version"
+COMMANDS = "add apply unapply presets status list remove update self-update search config theme backup sync doctor completion version"
 
 FISH = """# skctl completion for fish.
 # Install: skctl completion fish > ~/.config/fish/completions/skctl.fish
@@ -46,6 +46,7 @@ complete -c skctl -n __skctl_needs_command -a search -d 'Search skills locally a
 complete -c skctl -n __skctl_needs_command -a config -d 'Manage ~/.skill-ctl/config.yaml'
 complete -c skctl -n __skctl_needs_command -a theme -d 'View or change the color theme'
 complete -c skctl -n __skctl_needs_command -a backup -d 'Back presets up to GitHub'
+complete -c skctl -n __skctl_needs_command -a sync -d 'Sync presets between devices'
 complete -c skctl -n __skctl_needs_command -a restore -d 'Restore presets from the backup'
 complete -c skctl -n __skctl_needs_command -a doctor -d 'Find skill links that lead nowhere'
 complete -c skctl -n __skctl_needs_command -a completion -d 'Print a shell completion script'
@@ -56,6 +57,9 @@ complete -c skctl -n '__skctl_using apply unapply' -a '(__skctl_presets)'
 complete -c skctl -s P -l preset -x -a '(__skctl_presets)' -d Preset
 complete -c skctl -n '__skctl_using presets' -a 'list applied create edit clone combine history rename delete export import' -d Action
 complete -c skctl -n '__skctl_using backup' -a 'push pull init status' -d Action
+complete -c skctl -n '__skctl_using sync' -a status -d 'Fetch and report sync state'
+complete -c skctl -n '__skctl_using sync' -l dry-run -d 'Preview incoming and outgoing changes'
+complete -c skctl -n '__skctl_using sync' -s m -l message -r -d 'Commit message for local changes'
 complete -c skctl -n '__skctl_using config' -a 'show path edit reset' -d Action
 complete -c skctl -n '__skctl_using theme' -a 'default dark light mono catppuccin-mocha tokyo-night gruvbox' -d Theme
 complete -c skctl -n '__skctl_using completion' -a 'fish bash zsh powershell' -d Shell
@@ -115,6 +119,7 @@ _skctl() {{
         search) COMPREPLY=( $(compgen -W "--preset --global --local --remote --owner --applied --json --npx skills.sh skillsmp all" -- "$cur") ) ;;
         presets|preset) COMPREPLY=( $(compgen -W "list applied create edit clone combine history rename delete export import" -- "$cur") ) ;;
         backup) COMPREPLY=( $(compgen -W "push pull init status --dry-run" -- "$cur") ) ;;
+        sync) COMPREPLY=( $(compgen -W "status --dry-run --message --help" -- "$cur") ) ;;
         config) COMPREPLY=( $(compgen -W "show path edit reset" -- "$cur") ) ;;
         theme) COMPREPLY=( $(compgen -W "default dark light mono catppuccin-mocha tokyo-night gruvbox" -- "$cur") ) ;;
         completion) COMPREPLY=( $(compgen -W "fish bash zsh powershell" -- "$cur") ) ;;
@@ -157,6 +162,7 @@ _skctl() {{
         search) _values 'option' --preset --global --local --remote --owner --applied --json --npx ;;
         presets|preset) _values 'action' list applied create edit clone combine history rename delete export import ;;
         backup) _values 'action' push pull init status --dry-run ;;
+        sync) _arguments '--dry-run[Preview incoming and outgoing changes]' '--message[Commit message for local changes]:message:' '1:action:(status)' ;;
         config) _values 'action' show path edit reset ;;
         theme) _values 'action' default dark light mono catppuccin-mocha tokyo-night gruvbox ;;
         completion) _values 'shell' fish bash zsh powershell ;;
@@ -178,6 +184,8 @@ Register-ArgumentCompleter -Native -CommandName skctl, skill-ctl -ScriptBlock {{
 
     if ($words.Count -gt 1 -and $words[1] -eq 'completion') {{
         $candidates = @('fish', 'bash', 'zsh', 'powershell')
+    }} elseif ($words.Count -gt 2 -and $words[1] -eq 'sync') {{
+        $candidates = @('status', '--dry-run', '--message', '--help')
     }} elseif ($words.Count -gt 1 -and ($words[1] -in 'apply', 'unapply' -or '-P' -in $words -or '--preset' -in $words)) {{
         $presetDir = Join-Path $HOME '.skill-ctl/presets'
         if (Test-Path $presetDir) {{
