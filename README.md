@@ -406,6 +406,9 @@ The default mode creates symlinks. Projects then receive preset updates without 
 
 `--copy` creates independent directories. Use `--force` to replace an existing directory that the preset does not own. Without `--force`, `apply` preserves real files and directories.
 
+Copy ownership is recorded per destination. Copies recorded by older versions
+without this information require `--force` for their first refresh.
+
 Use `--dry-run` before applying when you want to inspect the planned links,
 copies, replacements, or protected existing directories. It does not create
 project files, update records, or run `npx skills`.

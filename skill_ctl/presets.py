@@ -561,7 +561,7 @@ def preview_apply(
             if destination.is_symlink():
                 console.print(f"  Would replace link {label} with {verb}")
             elif destination.exists():
-                if not (force or skill_name in owned):
+                if not (force or label in owned):
                     console.print(f"  Would keep existing {label} (use --force to replace)")
                 else:
                     console.print(f"  Would replace {label} with {verb}")
@@ -1503,6 +1503,8 @@ def record_npx_result(
     landed = {}
     targets = []
     copies = False
+    placed = set()
+    copied_paths = set()
     for (rel_dir, name), kind in sorted(after.items()):
         path = project / rel_dir / name
         unchanged = before.get((rel_dir, name)) == kind
@@ -1512,12 +1514,17 @@ def record_npx_result(
         if rel_dir not in targets:
             targets.append(rel_dir)
         copies = copies or kind != "link"
+        relative_path = f"{rel_dir}/{name}"
+        placed.add(relative_path)
+        if kind != "link":
+            copied_paths.add(relative_path)
 
     if not landed:
         return
     # `unapply` reads this to find them again, and a copy still needs --force,
     # exactly as one made by `apply --copy` does.
-    record_apply(project, preset, landed, targets, "copy" if copies else "symlink")
+    record_apply(project, preset, landed, targets, "copy" if copies else "symlink",
+                 placed=placed, copies=copied_paths)
     print_success(f"Recorded {len(landed)} skill{'s' if len(landed) != 1 else ''} from '{preset}' in {PROJECT_FILE}")
 
 
@@ -1637,7 +1644,8 @@ def link_skills(
     dest_labels = [f"~/{d}" for d in dest_rel_dirs] if is_home else dest_rel_dirs
     print_success(f"{verb} {len(result.applied)} skill{'s' if len(result.applied) != 1 else ''} into {', '.join(dest_labels)}")
     if result.applied:
-        record_apply(target_project, target_preset, result.applied, dest_rel_dirs, "copy" if result.copied else "symlink")
+        record_apply(target_project, target_preset, result.applied, dest_rel_dirs,
+                     "copy" if result.copied else "symlink", placed=result.placed, copies=result.copies)
 
 
 def resync_project(target_project: Path, recorded: dict, dry_run: bool = False) -> None:

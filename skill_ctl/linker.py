@@ -62,8 +62,13 @@ def skill_kinds(project: Path, rel_dirs: list[str], names: Iterable[str]) -> dic
 
 
 def owned_copies(recorded: dict, preset: str) -> set[str]:
+    """Exact copied paths, never inferred from a skill/target cross product.
+
+    Older records cannot prove which targets were skipped; require --force
+    to refresh those copies instead of risking unrelated files.
+    """
     entry = recorded.get(preset) or {}
-    return set(entry.get("skills", [])) if entry.get("mode") == "copy" else set()
+    return set(entry.get("copies", []))
 
 
 @dataclass
@@ -71,6 +76,8 @@ class LinkResult:
     applied: dict[str, Path]
     copied: bool
     kept: list[str]
+    placed: set[str]
+    copies: set[str]
 
 
 def apply_skills(
@@ -85,16 +92,19 @@ def apply_skills(
     owned = owned or set()
     applied: dict[str, Path] = {}
     kept: list[str] = []
+    placed: set[str] = set()
+    copies: set[str] = set()
     copied = copy
     for name, source in sorted(skills.items()):
         installed = False
         for relative_dir in target_dirs:
             destination = project / relative_dir / name
+            relative_path = f"{relative_dir}/{name}"
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.is_symlink():
                 destination.unlink()
             elif destination.exists():
-                if not (force or name in owned):
+                if not (force or relative_path in owned):
                     kept.append(f"{relative_dir}/{name}")
                     continue
                 if destination.is_dir():
@@ -104,12 +114,15 @@ def apply_skills(
             if not copied:
                 try:
                     destination.symlink_to(source.absolute())
+                    placed.add(relative_path)
                     installed = True
                     continue
                 except OSError:
                     copied = True
             shutil.copytree(source, destination)
+            placed.add(relative_path)
+            copies.add(relative_path)
             installed = True
         if installed:
             applied[name] = source
-    return LinkResult(applied, copied, kept)
+    return LinkResult(applied, copied, kept, placed, copies)

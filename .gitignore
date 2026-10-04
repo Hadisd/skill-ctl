@@ -5,6 +5,7 @@ dist/
 build/
 tests/*
 !tests/test_sync.py
+!tests/test_safety_regressions.py
 skill*.json
 tui.md
 

@@ -14,7 +14,7 @@ or symlink versus copy.
 import json
 import warnings
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 from skill_ctl.constants import BASE_DIR
 
@@ -95,7 +95,10 @@ def save_applied(projects: dict) -> None:
         warnings.warn(f"Could not update {APPLIED_FILE.name}: {e}", RuntimeWarning)
 
 
-def record_apply(project: Path, preset: str, skills: Iterable[str], targets: Iterable[str], mode: str) -> None:
+def record_apply(
+    project: Path, preset: str, skills: Iterable[str], targets: Iterable[str], mode: str,
+    placed: Optional[Iterable[str]] = None, copies: Optional[Iterable[str]] = None,
+) -> None:
     """Add to what this project has applied from `preset`.
 
     The record is the union of every apply, because the links are: applying with
@@ -115,6 +118,14 @@ def record_apply(project: Path, preset: str, skills: Iterable[str], targets: Ite
         "targets": list(dict.fromkeys(list(previous.get("targets", [])) + list(targets))),
         "mode": mode,
     }
+    if placed is not None:
+        placed = set(placed)
+        entry["copies"] = sorted((set(previous.get("copies", [])) - placed) | set(copies or []))
+        for other_name, other_entry in in_project.items():
+            if other_name != preset and "copies" in other_entry:
+                other_entry["copies"] = sorted(set(other_entry["copies"]) - placed)
+    elif "copies" in previous:
+        entry["copies"] = previous["copies"]
 
     in_project[preset] = entry
     write_project_file(project, in_project)
@@ -160,6 +171,8 @@ def keep_only(project: Path, preset: str, skills: Iterable[str]) -> None:
     remaining = sorted(set(entry.get("skills", [])) & set(skills))
     if remaining:
         entry["skills"] = remaining
+        if "copies" in entry:
+            entry["copies"] = [path for path in entry["copies"] if Path(path).name in remaining]
         in_project[preset] = entry
     else:
         in_project.pop(preset, None)
