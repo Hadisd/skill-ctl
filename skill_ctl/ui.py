@@ -21,6 +21,13 @@ class _LazyConsole:
     def __getattr__(self, name: str):
         return getattr(self._get(), name)
 
+    # Python looks up context-manager methods on the class, bypassing __getattr__.
+    def __enter__(self) -> Console:
+        return self._get().__enter__()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return self._get().__exit__(exc_type, exc_value, traceback)
+
 
 _current_theme_name: Optional[str] = None
 console = _LazyConsole(stderr=False)
