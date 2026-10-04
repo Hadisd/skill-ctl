@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -67,3 +68,32 @@ def test_legacy_copy_record_does_not_authorize_overwriting(sandbox):
     assert custom.read_text() == "unproven ownership\n"
     assert run("apply", "demo", "--copy", "--force").returncode == 0
     assert custom.read_text() == "original preset\n"
+
+
+@pytest.fixture
+def remote_backup(tmp_path, sandbox):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", "-b", "main", str(remote)], check=True)
+    run = sandbox[3]
+    result = run("backup", "push", "--repo", remote.as_uri())
+    assert result.returncode == 0, result.stdout + result.stderr
+    return remote.as_uri()
+
+
+@pytest.mark.parametrize("fresh", [False, True])
+def test_destructive_pull_requires_yes_without_terminal(sandbox, remote_backup, fresh):
+    home, project, source, run = sandbox
+    if fresh:
+        shutil.rmtree(home / ".skill-ctl" / ".git")
+        args = ["backup", "pull", "--repo", remote_backup]
+    else:
+        args = ["backup", "pull", "--force"]
+    content = source / "SKILL.md"
+    content.write_text("unbacked local work\n", encoding="utf-8")
+    result = run(*args)
+    assert result.returncode != 0
+    assert "--yes" in result.stdout + result.stderr
+    assert content.read_text() == "unbacked local work\n"
+    accepted = run(*args, "--yes")
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert content.read_text() == "original preset\n"

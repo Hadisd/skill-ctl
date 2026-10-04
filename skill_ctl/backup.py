@@ -480,14 +480,22 @@ def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bo
     # --force does the same replace even when local has its own commits, discarding them.
     fresh = git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0
     if fresh or force:
-        if not yes and sys.stdin.isatty():
+        if not yes:
+            if not sys.stdin.isatty():
+                print_error("Replacing local presets requires confirmation; pass --yes to approve without a terminal.")
+                sys.exit(1)
             from rich.prompt import Confirm
             console.print()
             prompt = (
                 f"Replace the contents of {BASE_DIR} with the backup?" if fresh
                 else f"Discard local commits not in the backup and replace {BASE_DIR} with it?"
             )
-            if not Confirm.ask(f"[bold]{prompt}[/bold]", default=False, console=console):
+            try:
+                confirmed = Confirm.ask(f"[bold]{prompt}[/bold]", default=False, console=console)
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                sys.exit(0)
+            if not confirmed:
                 sys.exit(0)
         if git(["checkout", "-f", "-B", BRANCH, f"origin/{BRANCH}"]).returncode != 0:
             sys.exit(1)
