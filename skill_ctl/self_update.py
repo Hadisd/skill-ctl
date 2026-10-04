@@ -89,7 +89,7 @@ def is_windows() -> bool:
 
 
 def cleanup_old_executables() -> None:
-    """Silently delete any leftover *.old.exe files from previous Windows self-updates."""
+    """Delete only skctl's leftover Windows executable backups."""
     if not is_windows():
         return
     try:
@@ -97,7 +97,8 @@ def cleanup_old_executables() -> None:
         search_dirs = [prefix / "Scripts", prefix / "bin", Path(sys.argv[0]).parent]
         for d in set(search_dirs):
             if d.is_dir():
-                for old_file in d.glob("*old.exe"):
+                for name in ("skctl.old.exe", "skill-ctl.old.exe"):
+                    old_file = d / name
                     try:
                         old_file.unlink()
                     except OSError:

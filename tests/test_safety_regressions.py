@@ -128,3 +128,25 @@ def test_pull_preview_does_not_initialize_local_store(sandbox, remote_backup):
     assert not (base / "config.yaml").exists()
     assert not (base / ".gitignore").exists()
     assert not (base / ".backup.lock").exists()
+
+
+def test_windows_cleanup_preserves_unrelated_executables(tmp_path, monkeypatch):
+    import skill_ctl.self_update as updater
+
+    prefix = tmp_path / "prefix"
+    launcher = tmp_path / "launcher"
+    directories = [prefix / "Scripts", prefix / "bin", launcher]
+    for directory in directories:
+        directory.mkdir(parents=True)
+        for name in ("skctl.old.exe", "skill-ctl.old.exe", "gold.exe", "unrelated.old.exe", "skctl.exe"):
+            (directory / name).write_bytes(b"executable")
+    monkeypatch.setattr(updater, "is_windows", lambda: True)
+    monkeypatch.setattr(updater.sys, "prefix", str(prefix))
+    monkeypatch.setattr(updater.sys, "argv", [str(launcher / "skctl.exe")])
+    updater.cleanup_old_executables()
+    for directory in directories:
+        assert (directory / "gold.exe").read_bytes() == b"executable"
+        assert (directory / "unrelated.old.exe").read_bytes() == b"executable"
+        assert (directory / "skctl.exe").exists()
+        assert not (directory / "skctl.old.exe").exists()
+        assert not (directory / "skill-ctl.old.exe").exists()
