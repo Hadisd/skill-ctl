@@ -74,11 +74,14 @@ def collect(preset: Optional[str], global_only: bool = False) -> list:
     if global_only:
         preset_dirs = []
     elif preset:
-        directory = preset_path(preset)
-        if not directory.is_dir():
-            print_error(f"Preset '{preset}' not found at {directory}")
-            sys.exit(1)
-        preset_dirs = [directory]
+        preset_names = [p.strip() for p in preset.split(",") if p.strip()]
+        preset_dirs = []
+        for p_name in preset_names:
+            directory = preset_path(p_name)
+            if not directory.is_dir():
+                print_error(f"Preset '{p_name}' not found at {directory}")
+                sys.exit(1)
+            preset_dirs.append(directory)
     elif PRESETS_DIR.is_dir():
         try:
             with os.scandir(PRESETS_DIR) as entries:
@@ -303,8 +306,9 @@ def search(
         print_error("skctl search is interactive; run it in a terminal or use --json.")
         sys.exit(1)
 
+    scope_desc = f" ({preset})" if preset else ""
     header = (
-        f"\x1b[1;36mSearch skills\x1b[0m  →  \x1b[2;32m{target_project}\x1b[0m\n"
+        f"\x1b[1;36mSearch skills\x1b[0m{scope_desc}  →  \x1b[2;32m{target_project}\x1b[0m\n"
         f"{DEFAULT_HEADER}"
     )
     chosen = pick(local_rows, header=header, query=query or "")

@@ -23,7 +23,7 @@ import yaml
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from skill_ctl.constants import BASE_DIR
+from skill_ctl.constants import BASE_DIR, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import DEFAULT_MIN_RELEVANCE, load_config, get_search_remotes
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import console, print_error, print_header, print_warn
@@ -594,7 +594,7 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
         debounced_rows = f"{rows} --debounce {SEARCH_DEBOUNCE}"
         header = (
             f"{'Skill':<{NAME_WIDTH}} {'Popularity':<{METRIC_WIDTH}} {'Source':<{SOURCE_WIDTH}} {'Updated':<{UPDATED_WIDTH}} Remote\n"
-            "Tab select · ctrl-a all · Enter install · Alt-P add to preset · Alt-G global · Alt-A repo"
+            "Tab sel · ^A all / ^D none · ↵ install · A-P preset · A-G global · A-A repo"
         )
         initial_input = None
         if len(query.strip()) >= MIN_QUERY_LENGTH:
@@ -609,11 +609,11 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
                 "--header", header,
                 "--color", fzf_color_arg(load_config().get("theme")),
                 "--expect", "alt-a,alt-p,alt-g",
-                "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
+                "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
                 "--bind", f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
                 "--bind", f"start:reload({rows})+refresh-preview",
                 "--bind", f"change:reload({debounced_rows})+refresh-preview",
-                "--preview", preview, "--preview-window", "right,55%,wrap",
+                "--preview", preview, "--preview-window", preview_window_options(),
             ],
             input=initial_input,
             stdout=subprocess.PIPE, text=True,

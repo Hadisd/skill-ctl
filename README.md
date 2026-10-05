@@ -150,7 +150,7 @@ skctl rm                   # choose installed skills to remove
 | `skctl apply [preset] --npx` | Install through `npx skills` instead of linking |
 | `skctl apply [preset] --dry-run` | Preview links, copies, replacements, and npx commands without writing |
 | `skctl unapply [preset] [-g]` | Remove a preset's links from a project or globally |
-| `skctl presets` | Browse presets with fzf, or list them when fzf is unavailable. Tab selects; Alt-N creates, Alt-L clones, Alt-M combines, Alt-R renames, Alt-D deletes, and Alt-E exports. |
+| `skctl presets` | Browse presets with fzf, or list them when fzf is unavailable. Enter opens selected preset(s) in search; Tab selects; Alt-N creates, Alt-Y clones, Alt-M merges, Alt-R renames, Alt-X deletes, and Alt-E exports. |
 | `skctl presets list` | List presets, skill counts, and applied project counts |
 | `skctl presets applied` | Show every project and the presets applied to it |
 | `skctl presets rename <old> <new>` | Rename a preset and update project records |

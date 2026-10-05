@@ -29,7 +29,7 @@ LIST_LIMIT = 25
 # a preset of a few hundred skills would otherwise be the whole screen.
 TABLE_LIMIT = 8
 
-from skill_ctl.constants import ALL_PRESETS, PRESETS_DIR, CONFIG_FILE, DEFAULT_TARGETS, SELECT_INTERACTIVELY
+from skill_ctl.constants import ALL_PRESETS, PRESETS_DIR, CONFIG_FILE, DEFAULT_TARGETS, SELECT_INTERACTIVELY, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config, get_agent_dir_map, all_target_dirs, global_skill_dirs
 from skill_ctl.ui import console, print_header, print_success, print_warn, print_error
 from skill_ctl.prompts import prompt_apply_destination, prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
@@ -416,10 +416,10 @@ def pick_remote_presets(preset_dirs: list[Path]) -> list[str]:
         result = subprocess.run(
             [
                 "fzf", "--ansi", "--multi", "--tabstop", "2", "--delimiter", "\t", "--with-nth", "2,3",
-                "--header", "Preset                  Skills\nTab select · Ctrl-A all · Ctrl-D none · Enter import",
+                "--header", "Preset                  Skills\nTab sel · ^A all / ^D none · ↵ import · ^/ view",
                 "--color", fzf_color_arg(config.get("theme")),
-                "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
-                "--preview", preview_command, "--preview-window", "right,55%,wrap",
+                "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                "--preview", preview_command, "--preview-window", preview_window_options(),
             ],
             input="\n".join(rows), stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
             check=False,
@@ -1990,9 +1990,10 @@ def browse_presets(preset_dirs: list[Path]) -> tuple[Optional[str], list[str]]:
             [
                 "fzf", "--ansi", "--multi", "--expect", "alt-x,alt-e,alt-r,alt-n,alt-y,alt-m,alt-t", "--tabstop", "2",
                 "--delimiter", "\t", "--with-nth", "2,3,4",
-                "--header", "Preset                  Skills  Applied projects\nTab select · Enter info · Alt-T edit · Alt-N new · Alt-Y clone · Alt-M combine · Alt-R rename · Alt-X delete · Alt-E export",
+                "--header", "Preset                  Skills  Applied projects\nTab sel · ↵ search · A-T edit · A-N new · A-Y clone · A-M merge · A-R rename · A-X del · A-E export",
                 "--color", fzf_color_arg(config.get("theme")),
-                "--preview", preview_command, "--preview-window", "right,55%,wrap",
+                "--bind", PREVIEW_TOGGLE_BIND,
+                "--preview", preview_command, "--preview-window", preview_window_options(),
             ],
             input="\n".join(rows), stdout=subprocess.PIPE, text=True,
             encoding="utf-8", errors="replace",
@@ -2134,7 +2135,8 @@ def presets(
                 else:
                     combine_presets(prompt_new_preset_name(), picked)
             else:
-                _print_preset_summaries(picked)
+                from skill_ctl.search import search
+                search(preset=",".join(picked))
             return
         if wants_picker(config):
             return

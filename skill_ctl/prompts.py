@@ -9,7 +9,7 @@ from typing import Optional
 
 from rich.prompt import Prompt
 
-from skill_ctl.constants import ALL_PRESETS
+from skill_ctl.constants import ALL_PRESETS, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config
 from skill_ctl.registry import projects_using
 from skill_ctl.theme import bat_theme, fzf_color_arg
@@ -103,9 +103,10 @@ def _browse_preset_choices(
         result = subprocess.run(
             [
                 "fzf", "--delimiter", "\t", "--with-nth", "2",
-                "--header", "Enter choose · Esc cancel",
+                "--header", "↵ choose · Esc cancel · ^/ view",
                 "--color", fzf_color_arg(config.get("theme")),
-                "--preview", preview_command, "--preview-window", "right,55%,wrap",
+                "--bind", PREVIEW_TOGGLE_BIND,
+                "--preview", preview_command, "--preview-window", preview_window_options(),
             ],
             input="\n".join(rows), stdout=subprocess.PIPE, text=True,
             encoding="utf-8", errors="replace",

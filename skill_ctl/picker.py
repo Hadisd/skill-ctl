@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from skill_ctl.catalog import format_relative_time
-from skill_ctl.constants import BASE_DIR
+from skill_ctl.constants import BASE_DIR, DEFAULT_PREVIEW_WINDOW, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import print_warn
@@ -33,7 +33,7 @@ PICK_DESC_WIDTH = 38
 # Keys worth knowing, spelled out rather than left to be discovered.
 DEFAULT_HEADER = (
     f"{'Skill':<{PICK_NAME_WIDTH}}  {'Location':<{PICK_LOCATION_WIDTH}}  {'Updated':<{PICK_UPDATED_WIDTH}}  Description\n"
-    "Tab select · ctrl-a all · Enter apply · Alt-P add to preset · Alt-G global · Alt-X delete"
+    "Tab sel · ^A all / ^D none · ↵ apply · A-P preset · A-G global · A-X del"
 )
 
 
@@ -272,7 +272,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
             f"{colors['name']}{truncate(row['skill'], PICK_NAME_WIDTH):<{PICK_NAME_WIDTH}}{reset}",
             f"{colors['location']}{truncate(row.get('location') or row.get('preset', ''), PICK_LOCATION_WIDTH):<{PICK_LOCATION_WIDTH}}{reset}",
             f"{dim}{truncate(format_relative_time(row.get('updated_at'), short=True) or '-', PICK_UPDATED_WIDTH):<{PICK_UPDATED_WIDTH}}{reset}",
-            f"{colors['description']}{truncate(row['description'], PICK_DESC_WIDTH):<{PICK_DESC_WIDTH}}{reset}",
+            f"{colors['description']}{truncate(row['description'], PICK_DESC_LIMIT)}{reset}",
             row["path"],
         ))
         for row in rows
@@ -284,9 +284,9 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
             "--header", header or DEFAULT_HEADER,
             "--color", fzf_color_arg(load_config().get("theme")),
             "--expect", "alt-p,alt-g,alt-x",
-            "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
+            "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
             "--preview", preview_command(),
-            "--preview-window", "right,55%,wrap",
+            "--preview-window", preview_window_options(),
         ],
         input="\n".join(lines), stdout=subprocess.PIPE, text=True,
         encoding="utf-8", errors="replace",
