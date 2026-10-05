@@ -7,6 +7,8 @@ from typing import Optional
 
 from skill_ctl.constants import BASE_DIR, CONFIG_FILE, DEFAULT_TARGETS, AGENT_DIR_MAP
 
+DEFAULT_MIN_RELEVANCE = 0.2
+
 DEFAULT_CONFIG_YAML = """# ~/.skill-ctl/config.yaml
 # Configuration for skill-ctl (skctl)
 
@@ -115,6 +117,14 @@ search_remotes:
     url: "https://skillsmp.com"
     enabled: false
 """,
+    "search_min_relevance": """
+# 13. Minimum relevance (0.0-1.0) a remote result needs to be listed.
+# Results are ranked by how well the query matches the name (1.0 exact, 0.9
+# prefix, ~0.8 word/substring), then source (0.5) and description (0.4), with
+# popularity breaking ties. 0 shows everything the registries return; 0.5 keeps
+# only results whose name or repo matches.
+search_min_relevance: 0.2
+""",
 }
 
 DEFAULT_CONFIG_YAML += "".join(LATER_SECTIONS.values())
@@ -201,6 +211,7 @@ def load_config() -> dict:
             {"name": "skills.sh", "url": "https://skills.sh", "enabled": True},
             {"name": "skillsmp", "url": "https://skillsmp.com", "enabled": False},
         ],
+        "search_min_relevance": DEFAULT_MIN_RELEVANCE,
     }
 
     for k, v in read_config_file().items():

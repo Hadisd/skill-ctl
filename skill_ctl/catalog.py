@@ -3,6 +3,7 @@
 import json
 import hashlib
 import os
+import re
 import shutil
 import shlex
 import subprocess
@@ -23,7 +24,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from skill_ctl.constants import BASE_DIR
-from skill_ctl.config import load_config, get_search_remotes
+from skill_ctl.config import DEFAULT_MIN_RELEVANCE, load_config, get_search_remotes
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import console, print_error, print_header, print_warn
 
@@ -200,7 +201,80 @@ def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP
     return results
 
 
-def search(query: str, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
+_WORD_SPLIT = re.compile(r"[\s\-_/.]+")
+
+
+def _term_relevance(term: str, skill: dict) -> float:
+    """How well one query term matches a result, 0.0 (not at all) to 1.0 (exact name)."""
+    name = str(skill.get("name") or "").lower()
+    if name == term:
+        return 1.0
+    if name.startswith(term):
+        return 0.9
+    if term in _WORD_SPLIT.split(name):
+        return 0.85
+    if term in name:
+        return 0.7
+    if term in str(skill.get("source") or skill.get("id") or "").lower():
+        return 0.5
+    if term in str(skill.get("description") or "").lower():
+        return 0.4
+    # Loose in-order match inside the name (`ltxpap` ~ `latex-paper`); only a tight
+    # one counts, or short terms would "match" nearly every long name.
+    position, start = 0, -1
+    for char in term:
+        position = name.find(char, position)
+        if position < 0:
+            return 0.0
+        if start < 0:
+            start = position
+        position += 1
+    tightness = len(term) / (position - start)
+    return 0.2 + 0.2 * tightness if tightness >= 0.5 else 0.0
+
+
+def relevance(query: str, skill: dict) -> float:
+    """Mean per-term relevance of a result to the query, 0.0 to 1.0."""
+    if query.strip().lower() == str(skill.get("name") or "").lower():
+        return 1.0
+    terms = [term for term in _WORD_SPLIT.split(query.lower()) if term]
+    if not terms:
+        return 1.0
+    return sum(_term_relevance(term, skill) for term in terms) / len(terms)
+
+
+def rank_results(query: str, results: list[dict], min_relevance: Optional[float] = None) -> list[dict]:
+    """Drop results below the relevance threshold and order the rest best match first.
+
+    `results` arrives most-popular first and the sort is stable, so popularity
+    only breaks ties between equally relevant results.
+    """
+    if min_relevance is None:
+        try:
+            min_relevance = float(load_config().get("search_min_relevance", DEFAULT_MIN_RELEVANCE))
+        except (TypeError, ValueError):
+            min_relevance = DEFAULT_MIN_RELEVANCE
+    scored = [(round(relevance(query, skill), 2), skill) for skill in results]
+    kept = [(score, skill) for score, skill in scored if score >= min_relevance]
+    kept.sort(key=lambda pair: -pair[0])
+    return [skill for _, skill in kept]
+
+
+def search(
+    query: str,
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    min_relevance: Optional[float] = None,
+) -> list[dict]:
+    """Remote results for a query, best match first, below-threshold ones dropped.
+
+    The registries' answer is cached unfiltered, so changing the threshold in the
+    config applies to queries already cached.
+    """
+    return rank_results(query, _search_unranked(query, owner, remotes), min_relevance)
+
+
+def _search_unranked(query: str, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
     """Search across all configured or requested remote catalogs concurrently with disk caching."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []

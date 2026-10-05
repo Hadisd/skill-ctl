@@ -296,6 +296,9 @@ search_remotes:
   - skills.sh
   - skillsmp
 
+# Minimum relevance score (0.0-1.0) for remote results (default: 0.2)
+search_min_relevance: 0.2
+
 backup:
   auto_push: false
 
@@ -306,6 +309,8 @@ npx:
 `global_skill_dirs` controls which global folders appear in search results and the preset creation picker. You may add absolute paths or paths beginning with `~`. Missing folders are ignored.
 
 `search_remotes` controls which remote registries are queried during remote searches (`skills.sh`, `skillsmp`).
+
+`search_min_relevance` controls the minimum relevance score (0.0 to 1.0) a remote skill must have to appear in search results (defaults to `0.2`).
 
 ## Search
 
