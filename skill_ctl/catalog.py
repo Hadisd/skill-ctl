@@ -127,9 +127,35 @@ def row_colors() -> dict[str, str]:
     return _colors
 
 
+_GH_TOKEN_CACHE: Optional[str] = None
+
+
+def get_github_token() -> Optional[str]:
+    """Retrieve GitHub token from env, or gh CLI cache if logged in."""
+    global _GH_TOKEN_CACHE
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    if _GH_TOKEN_CACHE is not None:
+        return _GH_TOKEN_CACHE if _GH_TOKEN_CACHE else None
+    if shutil.which("gh"):
+        try:
+            res = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True, text=True, timeout=2.0,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                _GH_TOKEN_CACHE = res.stdout.strip()
+                return _GH_TOKEN_CACHE
+        except Exception:
+            pass
+    _GH_TOKEN_CACHE = ""
+    return None
+
+
 def get_json(url: str, timeout: float = 10) -> dict:
     headers = {"Accept": "application/json", "User-Agent": "skill-ctl"}
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = get_github_token()
     if token and "api.github.com" in url:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, headers=headers)
@@ -854,7 +880,7 @@ def _fetch_raw_github_file(
 ) -> Optional[str]:
     url = f"https://raw.githubusercontent.com/{repo}/{branch}/{path}"
     headers = {"User-Agent": "skill-ctl"}
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = get_github_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = Request(url, headers=headers)

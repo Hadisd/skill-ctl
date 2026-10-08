@@ -261,3 +261,52 @@ def test_rename_rolls_back_when_link_replacement_fails(sandbox, monkeypatch):
     for target in targets:
         assert (project / target / "a" / "SKILL.md").read_text() == "original preset\n"
     assert not list(project.rglob(".skctl-rename-*"))
+
+
+def test_get_github_token_from_env_or_gh(monkeypatch):
+    from skill_ctl import catalog
+    monkeypatch.setattr(catalog, "_GH_TOKEN_CACHE", None)
+    monkeypatch.setenv("GITHUB_TOKEN", "token_env_123")
+    assert catalog.get_github_token() == "token_env_123"
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    class FakeRes:
+        returncode = 0
+        stdout = "gh_auth_token_789\n"
+
+    monkeypatch.setattr(catalog.shutil, "which", lambda cmd: "/usr/bin/gh")
+    monkeypatch.setattr(catalog.subprocess, "run", lambda *args, **kwargs: FakeRes())
+
+    token = catalog.get_github_token()
+    assert token == "gh_auth_token_789"
+    assert catalog._GH_TOKEN_CACHE == "gh_auth_token_789"
+
+
+def test_update_all_concurrency(sandbox, monkeypatch):
+    from skill_ctl import skills as skills_mod
+    home, project, source, run = sandbox
+    preset1 = home / ".skill-ctl" / "presets" / "p1"
+    preset2 = home / ".skill-ctl" / "presets" / "p2"
+    preset1.mkdir(parents=True)
+    preset2.mkdir(parents=True)
+    (preset1 / "skills-lock.json").write_text("{}", encoding="utf-8")
+    (preset2 / "skills-lock.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(skills_mod, "PRESETS_DIR", home / ".skill-ctl" / "presets")
+
+    calls = []
+
+    def fake_run(args, cwd):
+        calls.append((args, cwd))
+        return 0
+
+    monkeypatch.setattr(skills_mod, "run_npx_skills", fake_run)
+    monkeypatch.setattr(skills_mod, "maybe_auto_push", lambda reason: None)
+
+    skills_mod.update(all_presets=True, yes=True, concurrency=2)
+
+    assert len(calls) == 2
+    cwds = {c[1] for c in calls}
+    assert cwds == {str(preset1), str(preset2)}

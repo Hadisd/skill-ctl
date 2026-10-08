@@ -11,7 +11,7 @@ from rich.prompt import Confirm
 from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.config import load_config
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
-from skill_ctl.ui import console, print_header, print_error, print_warn
+from skill_ctl.ui import console, print_header, print_error, print_warn, print_success
 from skill_ctl.prompts import prompt_destination, prompt_skills
 from skill_ctl.runner import run_npx_skills, get_detected_global_agents
 from skill_ctl.presets import (
@@ -465,6 +465,10 @@ def update(
         bool,
         typer.Option("--yes", "-y", help="Skip prompt.")
     ] = False,
+    concurrency: Annotated[
+        int,
+        typer.Option("--concurrency", "-j", help="Number of presets to update concurrently with --all.")
+    ] = 4,
 ) -> None:
     """Update skills to latest versions via npx skills update."""
     args = ["update"]
@@ -492,10 +496,28 @@ def update(
             return
 
         failed = []
-        for path in updateable:
-            print_header(f"Updating preset '{path.name}'")
-            if run_npx_skills(args, cwd=str(path)) != 0:
-                failed.append(path.name)
+        if len(updateable) <= 1 or concurrency <= 1:
+            for path in updateable:
+                print_header(f"Updating preset '{path.name}'")
+                if run_npx_skills(args, cwd=str(path)) != 0:
+                    failed.append(path.name)
+        else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            workers = min(len(updateable), max(1, concurrency))
+            print_header(f"Updating {len(updateable)} presets concurrently ({workers} workers)")
+
+            def update_one(p: Path) -> tuple[str, int]:
+                return p.name, run_npx_skills(args, cwd=str(p))
+
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(update_one, path): path for path in updateable}
+                for fut in as_completed(futures):
+                    p_name, code = fut.result()
+                    if code != 0:
+                        failed.append(p_name)
+                    else:
+                        print_success(f"Preset '{p_name}' updated.")
 
         if len(failed) != len(updateable):
             maybe_auto_push("update all presets")
