@@ -145,6 +145,10 @@ def search(
         Optional[str],
         typer.Option("--remote", "-r", help="Search remote catalogs (e.g. skills.sh, skillsmp, or all).")
     ] = None,
+    limit: Annotated[
+        Optional[int],
+        typer.Option("--limit", "-L", help="Maximum remote search results to fetch (default: search_limit in config, or 50).")
+    ] = None,
     owner: Annotated[
         Optional[str],
         typer.Option("--owner", help="Search only repositories from a GitHub owner (remote catalog).")
@@ -189,9 +193,10 @@ def search(
         if remote and str(remote).lower() not in ("default", "true", "1"):
             remotes_filter = [r.strip() for r in remote.split(",") if r.strip()]
 
+        catalog_kwargs = {"limit": limit} if limit is not None else {}
         if json_output:
             from skill_ctl.catalog import search as catalog_search
-            results = catalog_search(query or "", owner=owner, remotes=remotes_filter)
+            results = catalog_search(query or "", owner=owner, remotes=remotes_filter, **catalog_kwargs)
             print(jsonlib.dumps(results, indent=2))
             return
 
@@ -201,7 +206,7 @@ def search(
 
         from skill_ctl.catalog import choose as choose_catalog_skill, inspect as inspect_catalog_skill
 
-        selected = choose_catalog_skill(query or "", owner, remotes=remotes_filter)
+        selected = choose_catalog_skill(query or "", owner, remotes=remotes_filter, **catalog_kwargs)
         if not selected or not inspect_catalog_skill(selected):
             return
 
@@ -219,6 +224,27 @@ def search(
             if not target_preset:
                 print_warn("No preset selected; installation cancelled.")
                 return
+        elif not target_preset and not is_global and not project:
+            config = load_config()
+            default_dest = config.get("default_destination", "prompt")
+            ask_dest = config.get("prompts", {}).get("ask_destination", True)
+            default_p = config.get("default_preset", "default")
+
+            should_prompt = (action == "alt-a") or (ask_dest and default_dest == "prompt")
+            if should_prompt and sys.stdin.isatty():
+                from skill_ctl.constants import PRESETS_DIR
+                from skill_ctl.prompts import prompt_destination
+                target_preset, is_project, is_global = prompt_destination(
+                    PRESETS_DIR, default_preset=default_p, target_project=Path.cwd()
+                )
+                if not is_project and not target_preset and not is_global:
+                    print_warn("Installation cancelled.")
+                    return
+            elif not should_prompt:
+                if default_dest == "global":
+                    is_global = True
+                elif default_dest == "preset":
+                    target_preset = default_p
 
         by_source: dict[str, list[str]] = {}
         for skill in selected:
@@ -253,6 +279,8 @@ def search(
                     args.extend(["--skill", name])
             if is_global:
                 args.append("-g")
+            elif target_preset:
+                args.extend(["--agent", "universal", "-y"])
             code = run_npx_skills(args, cwd=str(target))
             if code == 0:
                 installed.extend(names)
@@ -380,5 +408,25 @@ def search(
             maybe_auto_push(f"add {', '.join(r['skill'] for r in chosen)} to {target_preset}")
     elif action == "alt-g" or global_only:
         add_installed_to_global(load_config(), skill=",".join(r["skill"] for r in chosen))
+    elif action == "alt-a":
+        from skill_ctl.constants import PRESETS_DIR
+        from skill_ctl.prompts import prompt_destination
+        config = load_config()
+        default_p = config.get("default_preset", "default")
+        dest_preset, is_project, is_global_dest = prompt_destination(
+            PRESETS_DIR, default_preset=default_p, target_project=target_project
+        )
+        if is_project:
+            apply_picked(chosen, project=str(target_project))
+        elif is_global_dest:
+            add_installed_to_global(config, skill=",".join(r["skill"] for r in chosen))
+        elif dest_preset:
+            from skill_ctl.presets import install_skills_into_preset
+            target_dir = ensure_preset_dir(dest_preset)
+            added = install_skills_into_preset(dest_preset, target_dir, chosen)
+            if added:
+                maybe_auto_push(f"add {', '.join(r['skill'] for r in chosen)} to {dest_preset}")
+        else:
+            print_warn("Action cancelled.")
     else:
         apply_picked(chosen, project=str(target_project))

@@ -24,7 +24,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from skill_ctl.constants import BASE_DIR, PREVIEW_TOGGLE_BIND, preview_window_options
-from skill_ctl.config import DEFAULT_MIN_RELEVANCE, load_config, get_search_remotes
+from skill_ctl.config import DEFAULT_MIN_RELEVANCE, DEFAULT_SEARCH_LIMIT, load_config, get_search_remotes
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import console, print_error, print_header, print_warn
 
@@ -64,7 +64,7 @@ def _write_disk_cache(path: Path, data: Any) -> None:
 SKILLS_URL = os.environ.get("SKILLS_API_URL") or "https://skills.sh"
 SKILLSMP_URL = os.environ.get("SKILLSMP_API_URL") or "https://skillsmp.com"
 GITHUB_API = "https://api.github.com"
-SEARCH_LIMIT = 50
+SEARCH_LIMIT = DEFAULT_SEARCH_LIMIT
 SEARCH_TIMEOUT = 20
 MIN_QUERY_LENGTH = 3
 SEARCH_DEBOUNCE = "0.25"
@@ -73,6 +73,39 @@ METRIC_WIDTH = 10
 UPDATED_WIDTH = 10
 SOURCE_WIDTH = 26
 REMOTE_WIDTH = 10
+
+
+def get_search_limit(override: Optional[int] = None) -> int:
+    """Return effective search limit from override, config, or default."""
+    if override is not None:
+        try:
+            return max(1, int(override))
+        except (TypeError, ValueError):
+            pass
+    try:
+        cfg = load_config()
+        val = cfg.get("search_limit")
+        if val is None:
+            val = cfg.get("search_query_limit")
+        if val is not None:
+            return max(1, int(val))
+    except Exception:
+        pass
+    return SEARCH_LIMIT
+
+
+def query_cache_key(
+    query: str,
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    limit: Optional[int] = None,
+) -> str:
+    """Deterministic cache key for a remote catalog search query."""
+    eff_limit = get_search_limit(limit)
+    q_clean = query.strip()
+    remotes_str = ",".join(sorted(remotes)) if remotes else ""
+    return hashlib.sha256(f"{q_clean}\0{owner or ''}\0{remotes_str}\0{eff_limit}".encode()).hexdigest()
+
 
 # Cached per process: write_rows runs as a fresh `python -m skill_ctl.catalog
 # --rows` subprocess on every fzf keystroke, so one config read per process is
@@ -129,11 +162,12 @@ def parse_github_repo(url_or_str: str) -> Optional[str]:
     return None
 
 
-def search_skills_sh(query: str, owner: Optional[str] = None, url: str = SKILLS_URL, timeout: float = SEARCH_TIMEOUT) -> list[dict]:
+def search_skills_sh(query: str, owner: Optional[str] = None, url: str = SKILLS_URL, timeout: float = SEARCH_TIMEOUT, limit: Optional[int] = None) -> list[dict]:
     """Search skills.sh API for agent skills."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []
-    params = {"q": query.strip(), "limit": str(SEARCH_LIMIT)}
+    req_limit = get_search_limit(limit)
+    params = {"q": query.strip(), "limit": str(req_limit)}
     if owner:
         params["owner"] = owner
     try:
@@ -161,11 +195,12 @@ def search_skills_sh(query: str, owner: Optional[str] = None, url: str = SKILLS_
     return results
 
 
-def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP_URL, timeout: float = SEARCH_TIMEOUT) -> list[dict]:
+def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP_URL, timeout: float = SEARCH_TIMEOUT, limit: Optional[int] = None) -> list[dict]:
     """Search skillsmp.com API for agent skills."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []
-    params = {"q": query.strip(), "limit": str(SEARCH_LIMIT)}
+    req_limit = min(get_search_limit(limit), 50)
+    params = {"q": query.strip(), "limit": str(req_limit)}
     try:
         data = get_json(f"{url.rstrip('/')}/api/v1/skills/search?{urlencode(params)}", timeout=timeout)
     except HTTPError as error:
@@ -175,7 +210,13 @@ def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP
     except Exception:
         return []
 
-    skills_list = data.get("data", {}).get("skills", []) if isinstance(data, dict) else []
+    payload = data.get("data") if isinstance(data, dict) else {}
+    if isinstance(payload, dict):
+        skills_list = payload.get("skills", [])
+    elif isinstance(payload, list):
+        skills_list = payload
+    else:
+        skills_list = []
     results = []
     for item in skills_list:
         gh_url = item.get("githubUrl", "")
@@ -265,23 +306,28 @@ def search(
     owner: Optional[str] = None,
     remotes: Optional[list[str]] = None,
     min_relevance: Optional[float] = None,
+    limit: Optional[int] = None,
 ) -> list[dict]:
     """Remote results for a query, best match first, below-threshold ones dropped.
 
     The registries' answer is cached unfiltered, so changing the threshold in the
     config applies to queries already cached.
     """
-    return rank_results(query, _search_unranked(query, owner, remotes), min_relevance)
+    return rank_results(query, _search_unranked(query, owner, remotes, limit=limit), min_relevance)
 
 
-def _search_unranked(query: str, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
+def _search_unranked(
+    query: str,
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    limit: Optional[int] = None,
+) -> list[dict]:
     """Search across all configured or requested remote catalogs concurrently with disk caching."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []
 
-    q_clean = query.strip()
-    remotes_str = ",".join(sorted(remotes)) if remotes else ""
-    cache_key = hashlib.sha256(f"{q_clean}\0{owner or ''}\0{remotes_str}".encode()).hexdigest()
+    eff_limit = get_search_limit(limit)
+    cache_key = query_cache_key(query, owner, remotes, eff_limit)
     cache_file = QUERY_CACHE_DIR / f"{cache_key}.json"
 
     is_mocked = globals().get("get_json") is not _DEFAULT_GET_JSON
@@ -322,8 +368,8 @@ def _search_unranked(query: str, owner: Optional[str] = None, remotes: Optional[
         r_type = remote_info.get("type", remote_info.get("name", "")).lower()
         r_url = remote_info.get("url", "")
         if "skillsmp" in r_type or "skillsmp" in r_url:
-            return search_skillsmp(query, owner=owner, url=r_url or SKILLSMP_URL)
-        return search_skills_sh(query, owner=owner, url=r_url or SKILLS_URL)
+            return search_skillsmp(query, owner=owner, url=r_url or SKILLSMP_URL, limit=eff_limit)
+        return search_skills_sh(query, owner=owner, url=r_url or SKILLS_URL, limit=eff_limit)
 
     try:
         with ThreadPoolExecutor(max_workers=max(len(all_remotes), 1)) as pool:
@@ -494,16 +540,21 @@ def format_row(skill: dict) -> str:
     )
 
 
-def choose(query: str = "", owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
+def choose(
+    query: str = "",
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    limit: Optional[int] = None,
+) -> list[dict]:
     if shutil.which("fzf") and sys.stdin.isatty():
-        return choose_with_fzf(query, owner, remotes=remotes)
+        return choose_with_fzf(query, owner, remotes=remotes, limit=limit)
     if not query:
         try:
             query = Prompt.ask("Search skills", console=console).strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
             return []
-    results = search(query, owner, remotes=remotes)
+    results = search(query, owner, remotes=remotes, limit=limit)
     if not results:
         print_warn("No skills found.")
         return []
@@ -547,17 +598,23 @@ def choose(query: str = "", owner: Optional[str] = None, remotes: Optional[list[
     return chosen
 
 
-def cached_search(query: str, cache_dir: Path, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
+def cached_search(
+    query: str,
+    cache_dir: Path,
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    limit: Optional[int] = None,
+) -> list[dict]:
     """search(), remembering each query for the lifetime of one picker session."""
-    remotes_str = ",".join(sorted(remotes)) if remotes else ""
-    key = hashlib.sha256(f"{query}\0{owner or ''}\0{remotes_str}".encode()).hexdigest()
+    eff_limit = get_search_limit(limit)
+    key = query_cache_key(query, owner, remotes, eff_limit)
     path = cache_dir / f"query-{key}.json"
     try:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pass
-    skills = search(query, owner, remotes=remotes)
+    skills = search(query, owner, remotes=remotes, limit=eff_limit)
     if skills:
         try:
             path.write_text(json.dumps(skills), encoding="utf-8")
@@ -566,12 +623,18 @@ def cached_search(query: str, cache_dir: Path, owner: Optional[str] = None, remo
     return skills
 
 
-def write_rows(query: str, cache_dir: Path, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[str]:
+def write_rows(
+    query: str,
+    cache_dir: Path,
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    limit: Optional[int] = None,
+) -> list[str]:
     """Write fzf candidates and their preview inputs for one query across remotes."""
     if len(query.strip()) < MIN_QUERY_LENGTH:
         return []
     rows = []
-    for skill in cached_search(query.strip(), cache_dir, owner, remotes=remotes):
+    for skill in cached_search(query.strip(), cache_dir, owner, remotes=remotes, limit=limit):
         key = f"{skill.get('source') or skill.get('id', '')}:{skill.get('name', '')}:{skill.get('remote', '')}"
         path = cache_dir / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
         path.write_text(json.dumps(skill), encoding="utf-8")
@@ -579,7 +642,12 @@ def write_rows(query: str, cache_dir: Path, owner: Optional[str] = None, remotes
     return rows
 
 
-def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[list[str]] = None) -> list[dict]:
+def choose_with_fzf(
+    query: str,
+    owner: Optional[str] = None,
+    remotes: Optional[list[str]] = None,
+    limit: Optional[int] = None,
+) -> list[dict]:
     """Browse live remote search results with details loaded for the highlighted row."""
     with tempfile.TemporaryDirectory(prefix="skctl-search-") as temporary:
         root = Path(temporary)
@@ -590,6 +658,8 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
         if remotes:
             for r in remotes:
                 rows += f" --remote {shell_quote(r)}"
+        if limit is not None:
+            rows += f" --limit {int(limit)}"
 
         debounced_rows = f"{rows} --debounce {SEARCH_DEBOUNCE}"
         header = (
@@ -598,7 +668,10 @@ def choose_with_fzf(query: str, owner: Optional[str] = None, remotes: Optional[l
         )
         initial_input = None
         if len(query.strip()) >= MIN_QUERY_LENGTH:
-            initial_rows = write_rows(query.strip(), root, owner, remotes=remotes)
+            if limit is not None:
+                initial_rows = write_rows(query.strip(), root, owner, remotes=remotes, limit=limit)
+            else:
+                initial_rows = write_rows(query.strip(), root, owner, remotes=remotes)
             if initial_rows:
                 initial_input = "\n".join(initial_rows)
 
@@ -721,7 +794,7 @@ def _fetch_candidates_parallel(
     return None, None
 
 
-def frontmatter(source: str, skill_name: str, branch: str = "main", timeout: float = 3.0) -> dict:
+def frontmatter(source: str, skill_name: str, branch: str = "main", timeout: float = 2.0) -> dict:
     repo = github_source(source)
     if not repo:
         return {}
@@ -739,7 +812,7 @@ def frontmatter(source: str, skill_name: str, branch: str = "main", timeout: flo
 
     if text is None:
         try:
-            tree = get_json(f"{GITHUB_API}/repos/{repo}/git/trees/HEAD?recursive=1").get("tree", [])
+            tree = get_json(f"{GITHUB_API}/repos/{repo}/git/trees/HEAD?recursive=1", timeout=2.5).get("tree", [])
             blob_candidates = [
                 entry["path"]
                 for entry in tree
@@ -806,7 +879,7 @@ def details(skill: dict) -> dict:
                 updated = cached_updated or cached_repo.get("pushed_at") or cached_repo.get("updated_at")
                 return stars, updated
         try:
-            repo_data = get_json(f"{GITHUB_API}/repos/{repo}")
+            repo_data = get_json(f"{GITHUB_API}/repos/{repo}", timeout=2.5)
             if not is_mocked:
                 _write_disk_cache(repo_cache_file, repo_data)
             stars = cached_stars if cached_stars is not None else repo_data.get("stargazers_count")
@@ -1015,12 +1088,13 @@ if __name__ == "__main__":
         parser.add_argument("--query", required=True)
         parser.add_argument("--owner")
         parser.add_argument("--remote", action="append", dest="remotes")
+        parser.add_argument("--limit", type=int)
         parser.add_argument("--debounce", type=float, default=0.0)
         args = parser.parse_args()
         if args.debounce > 0:
             import time
 
             time.sleep(args.debounce)
-        print("\n".join(write_rows(args.query, Path(args.cache_dir), args.owner, remotes=args.remotes)))
+        print("\n".join(write_rows(args.query, Path(args.cache_dir), args.owner, remotes=args.remotes, limit=args.limit)))
     else:
         raise SystemExit("catalog preview is only available through `skctl search`")

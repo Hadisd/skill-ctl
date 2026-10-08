@@ -11,7 +11,8 @@ from rich.prompt import Prompt
 
 from skill_ctl.constants import ALL_PRESETS, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config
-from skill_ctl.registry import projects_using
+from skill_ctl.registry import load_applied, projects_using
+from skill_ctl.skillscan import get_preset_skills
 from skill_ctl.theme import bat_theme, fzf_color_arg
 from skill_ctl.ui import console, print_error, print_warn
 
@@ -69,10 +70,11 @@ def _browse_preset_choices(
             extra_text = f"# {extra[0]}\n\n{extra_text}"
         extra_preview.write_text(extra_text.strip() + "\n", encoding="utf-8")
         rows = [f"0\t{extra[0]}\t{extra_preview}"]
+        applied_map = load_applied()
         for index, name in enumerate(choices, 1):
             preset_dir = presets_dir / name if presets_dir else None
-            skills = sorted(path.parent.name for path in preset_dir.rglob("SKILL.md")) if preset_dir else []
-            projects = projects_using(name)
+            skills = sorted(get_preset_skills(preset_dir).keys()) if preset_dir else []
+            projects = sorted(path for path, presets in applied_map.items() if name in presets)
             preview = previews / str(index)
             md = [
                 f"# {name}",

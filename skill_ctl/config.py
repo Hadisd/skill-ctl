@@ -8,6 +8,7 @@ from typing import Optional
 from skill_ctl.constants import BASE_DIR, CONFIG_FILE, DEFAULT_TARGETS, AGENT_DIR_MAP
 
 DEFAULT_MIN_RELEVANCE = 0.2
+DEFAULT_SEARCH_LIMIT = 50
 
 DEFAULT_CONFIG_YAML = """# ~/.skill-ctl/config.yaml
 # Configuration for skill-ctl (skctl)
@@ -125,6 +126,11 @@ search_remotes:
 # only results whose name or repo matches.
 search_min_relevance: 0.2
 """,
+    "search_limit": """
+# 14. Maximum number of results to fetch per remote registry (default: 50).
+# Controls how many search results are retrieved from skills.sh and skillsmp.com.
+search_limit: 50
+""",
 }
 
 DEFAULT_CONFIG_YAML += "".join(LATER_SECTIONS.values())
@@ -212,15 +218,25 @@ def load_config() -> dict:
             {"name": "skillsmp", "url": "https://skillsmp.com", "enabled": False},
         ],
         "search_min_relevance": DEFAULT_MIN_RELEVANCE,
+        "search_limit": DEFAULT_SEARCH_LIMIT,
     }
 
-    for k, v in read_config_file().items():
+    raw_file = read_config_file()
+    for k, v in raw_file.items():
         if k in ("prompts", "backup", "npx") and isinstance(v, dict):
             config[k].update(v)
         elif k == "custom_agents" and isinstance(v, dict):
             config["custom_agents"].update(v)
         elif k in config:
             config[k] = v
+
+    try:
+        raw_limit = raw_file.get("search_limit")
+        if raw_limit is None:
+            raw_limit = raw_file.get("search_query_limit")
+        config["search_limit"] = max(1, int(raw_limit)) if raw_limit is not None else DEFAULT_SEARCH_LIMIT
+    except (TypeError, ValueError):
+        config["search_limit"] = DEFAULT_SEARCH_LIMIT
 
     # A default_preset that is not a plain directory name would escape PRESETS_DIR
     # (`PRESETS_DIR / "/tmp/x"` is just "/tmp/x"), so refuse it rather than create

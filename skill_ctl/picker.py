@@ -33,7 +33,7 @@ PICK_DESC_WIDTH = 38
 # Keys worth knowing, spelled out rather than left to be discovered.
 DEFAULT_HEADER = (
     f"{'Skill':<{PICK_NAME_WIDTH}}  {'Location':<{PICK_LOCATION_WIDTH}}  {'Updated':<{PICK_UPDATED_WIDTH}}  Description\n"
-    "Tab sel · ^A all / ^D none · ↵ apply · A-P preset · A-G global · A-X del"
+    "Tab sel · ^A all / ^D none · ↵ apply · A-A dest · A-P preset · A-G global · A-X del"
 )
 
 
@@ -283,7 +283,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
             "--delimiter", "\t", "--with-nth", "1,2,3,4",
             "--header", header or DEFAULT_HEADER,
             "--color", fzf_color_arg(load_config().get("theme")),
-            "--expect", "alt-p,alt-g,alt-x",
+            "--expect", "alt-p,alt-g,alt-x,alt-a",
             "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
             "--preview", preview_command(),
             "--preview-window", preview_window_options(),
@@ -294,7 +294,7 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     if result.returncode >= 2 and result.returncode != 130:
         return [], False
     output_lines = result.stdout.splitlines()
-    action = output_lines.pop(0) if output_lines and output_lines[0] in ("alt-p", "alt-g", "alt-x") else None
+    action = output_lines.pop(0) if output_lines and output_lines[0] in ("alt-p", "alt-g", "alt-x", "alt-a") else None
     if output_lines and not output_lines[0]:
         output_lines.pop(0)
     picked = {
