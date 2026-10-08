@@ -711,8 +711,123 @@ def choose_with_fzf(
             skill["_action"] = action
             chosen.append(skill)
         if action == "alt-a" and chosen:
-            chosen = [{"name": "all skills", "source": chosen[0].get("source") or chosen[0].get("id"), "_all_from_source": True, "_action": action}]
+            raw_source = chosen[0].get("source") or chosen[0].get("id") or ""
+            repo_source = extract_repo_source(raw_source) or raw_source
+            repo_skills = fetch_repo_skills(repo_source) if repo_source else []
+            if repo_skills:
+                picked_names = choose_repo_skills(repo_source, repo_skills)
+                if not picked_names:
+                    return []
+                chosen = [
+                    {
+                        "name": name,
+                        "source": repo_source,
+                        "id": f"{repo_source}/{name}",
+                        "remote": chosen[0].get("remote", "skills.sh"),
+                        "_action": action,
+                    }
+                    for name in picked_names
+                ]
+            else:
+                chosen = [{"name": "all skills", "source": repo_source, "_all_from_source": True, "_action": action}]
         return chosen
+
+
+def extract_repo_source(source: str) -> Optional[str]:
+    """Normalize a GitHub source or URL into owner/repo format."""
+    repo = parse_github_repo(source)
+    if repo:
+        return repo
+    parts = source.strip("/").split("/")
+    if len(parts) >= 2 and parts[0] and parts[1]:
+        return f"{parts[0]}/{parts[1]}".removesuffix(".git")
+    return None
+
+
+def fetch_repo_skills(source: str, branch: str = "HEAD", timeout: float = 3.0) -> list[str]:
+    """Discover all skill names inside a repository source."""
+    repo = extract_repo_source(source)
+    if not repo:
+        return []
+
+    is_mocked = globals().get("get_json") is not _DEFAULT_GET_JSON
+    cache_key = hashlib.sha256(f"repo-skills:{repo.lower()}:{branch}".encode()).hexdigest()
+    cache_file = SKILL_CACHE_DIR / f"{cache_key}.json"
+    if not is_mocked:
+        cached = _read_disk_cache(cache_file, ttl=SKILL_CACHE_TTL)
+        if cached is not None and isinstance(cached, list):
+            return cached
+
+    skills: set[str] = set()
+
+    # 1. Try GitHub trees API (fast, single recursive call)
+    try:
+        tree = get_json(f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1", timeout=timeout).get("tree", [])
+        for entry in tree:
+            if entry.get("type") == "blob":
+                p = entry.get("path", "")
+                if p == "SKILL.md":
+                    skills.add(repo.split("/")[-1])
+                elif p.endswith("/SKILL.md"):
+                    name = p.rsplit("/", 2)[-2]
+                    if name:
+                        skills.add(name)
+    except Exception:
+        pass
+
+    # 2. Fallback to skills.sh API by owner & repo name
+    if not skills and "/" in repo:
+        try:
+            owner, repo_name = repo.split("/", 1)
+            results = search_skills_sh(repo_name, owner=owner, timeout=timeout, limit=100)
+            for item in results:
+                item_src = item.get("source") or item.get("id", "")
+                if item_src == repo or item_src.startswith(f"{repo}/"):
+                    if item.get("name"):
+                        skills.add(item["name"])
+        except Exception:
+            pass
+
+    sorted_skills = sorted(skills)
+    if sorted_skills and not is_mocked:
+        _write_disk_cache(cache_file, sorted_skills)
+
+    return sorted_skills
+
+
+def choose_repo_skills(source: str, skills: list[str]) -> list[str]:
+    """Let the user pick which skills from a repository to install."""
+    if not skills:
+        return []
+    if len(skills) == 1:
+        return skills
+
+    if shutil.which("fzf") and sys.stdin.isatty():
+        header = (
+            f"Repository: {source} ({len(skills)} skills)\n"
+            "Tab sel · ^A all / ^D none · ↵ confirm · Esc cancel"
+        )
+        result = subprocess.run(
+            [
+                "fzf", "--multi", "--ansi",
+                "--header", header,
+                "--color", fzf_color_arg(load_config().get("theme")),
+                "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
+                "--prompt", "Select skills > ",
+            ],
+            input="\n".join(skills),
+            stdout=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode != 0:
+            return []
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    else:
+        from skill_ctl.prompts import prompt_skills
+        try:
+            return prompt_skills(skills, action="install")
+        except SystemExit:
+            return []
 
 
 def preview_command() -> str:
@@ -1038,8 +1153,8 @@ def inspect(skills: list[dict]) -> bool:
         skill = skills[0]
         if skill.get("_all_from_source"):
             source = str(skill.get("source") or skill.get("id", ""))
-            print_header(f"Choose skills from {source}")
-            console.print("  [dim]npx skills will open its own picker.[/dim]")
+            print_header(f"Install repository: {source}")
+            console.print("  [dim]All skills from repository will be installed.[/dim]")
             return Confirm.ask("Continue to installation?", default=True, console=console)
         data = skill.get("_details") or details(skill)
         print_header(str(data.get("name", skill.get("name", ""))))
@@ -1053,7 +1168,12 @@ def inspect(skills: list[dict]) -> bool:
             source = str(skill.get("source") or skill.get("id", ""))
             remote = str(skill.get("remote", ""))
             pop = format_metric(skill.get("installs"), skill.get("stars"))
-            console.print(f"  [header]{name}[/header] [dim]({source} · {pop} · {remote})[/dim]")
+            meta_parts = [source]
+            if pop and pop != "-":
+                meta_parts.append(pop)
+            if remote:
+                meta_parts.append(remote)
+            console.print(f"  [header]{name}[/header] [dim]({' · '.join(meta_parts)})[/dim]")
         prompt = f"\nInstall {len(skills)} skills?"
     try:
         return Confirm.ask(prompt, default=True, console=console)

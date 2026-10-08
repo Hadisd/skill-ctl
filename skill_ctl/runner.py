@@ -38,7 +38,7 @@ def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
     # thing here that can break when `npx skills` changes. Nothing depends on it
     # working: without it the scope question simply comes back, which is why
     # `npx.patch_scope_prompt: false` can switch it off for good.
-    if cmd_args and cmd_args[0] == "add":
+    if cmd_args and cmd_args[0] in ("add", "update"):
         if "-g" not in cmd_args and "--global" not in cmd_args:
             if "-p" not in cmd_args and "--project" not in cmd_args:
                 cmd_args.append("-p")
