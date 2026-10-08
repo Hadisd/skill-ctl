@@ -150,6 +150,10 @@ def apply_skills(
     for name, source in sorted(skills.items()):
         installed = False
         for relative_dir in target_dirs:
+            norm_dest = Path(os.path.normpath(os.path.join(project, relative_dir, name)))
+            if not norm_dest.is_relative_to(project.resolve()):
+                kept.append(f"{relative_dir}/{name}")
+                continue
             destination = project / relative_dir / name
             relative_path = f"{relative_dir}/{name}"
             destination.parent.mkdir(parents=True, exist_ok=True)

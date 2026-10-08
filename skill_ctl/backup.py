@@ -83,6 +83,16 @@ def backup_lock():
             release()
 
 
+import re
+
+
+def sanitize_url(url: Optional[str]) -> str:
+    """Mask embedded credentials in a git URL to prevent logging secrets."""
+    if not url:
+        return ""
+    return re.sub(r"://([^@:]+)(:[^@]*)?@", "://***@", url)
+
+
 def remote_url() -> Optional[str]:
     if not has_repo():
         return None
@@ -92,6 +102,9 @@ def remote_url() -> Optional[str]:
 
 def repo_url(repo: str) -> str:
     """Accept a full URL, 'owner/name', or a bare name (which needs gh to create)."""
+    if not repo or repo.startswith("-"):
+        print_error(f"Invalid repository '{repo}': cannot start with '-'.")
+        sys.exit(1)
     if "://" in repo or repo.startswith("git@"):
         return repo
     if repo.count("/") == 1:
@@ -258,7 +271,7 @@ def backup_init(repo: Optional[str], public: bool, yes: bool = False) -> None:
 
     maybe_reset_local_history(current, url, yes)
 
-    print_success(f"Backing up {BASE_DIR} to {url}")
+    print_success(f"Backing up {BASE_DIR} to {sanitize_url(url)}")
     print_warn("Presets are uploaded as-is; use a private repo if any skill is not public.")
     step, note = suggest_next_step(url)
     console.print(f"Next: [header]{step}[/header]  [dim]({note})[/dim]")
@@ -278,7 +291,7 @@ def maybe_reset_local_history(old_url: Optional[str], new_url: str, yes: bool) -
         return
     if git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0:
         return  # nothing committed yet, nothing to lose
-    print_warn(f"{BASE_DIR} still has git history from the previous backup repo ({old_url}).")
+    print_warn(f"{BASE_DIR} still has git history from the previous backup repo ({sanitize_url(old_url)}).")
     if not yes:
         if not sys.stdin.isatty():
             print_warn("Keeping that history (not a terminal to confirm dropping it); pass --yes to drop it automatically.")
@@ -349,7 +362,7 @@ def backup_push(
             return
         push_args.insert(1, "--force-with-lease")
 
-    print_header(f"Pushing {BASE_DIR} to {url}")
+    print_header(f"Pushing {BASE_DIR} to {sanitize_url(url)}")
     result = git(push_args, capture=True)
     if result.returncode != 0:
         console.print((result.stderr or result.stdout).rstrip())
@@ -392,7 +405,7 @@ def commit_presets(message: str, include_config: bool = False, presets_only: boo
 def confirm_force_push(url: Optional[str], yes: bool) -> bool:
     if yes:
         return True
-    print_warn(f"This overwrites {url} with what's here, permanently discarding any commits only it has.")
+    print_warn(f"This overwrites {sanitize_url(url)} with what's here, permanently discarding any commits only it has.")
     if not sys.stdin.isatty():
         return False
     try:
@@ -410,7 +423,7 @@ def explain_push_failure(stderr: str, url: str) -> None:
     name = url.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1] or DEFAULT_REPO_NAME
 
     if "not found" in lowered or "does not exist" in lowered:
-        print_error(f"{url} does not exist, or your account cannot see it.")
+        print_error(f"{sanitize_url(url)} does not exist, or your account cannot see it.")
         owner = github_login()
         if owner:
             console.print(f"Create it (private) with: [header]skctl backup init --repo {name}[/header]")
@@ -477,7 +490,7 @@ def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bo
         print_error("No backup repository configured. Run: skctl backup init --repo owner/name")
         sys.exit(1)
 
-    print_header(f"Fetching backup from {url}")
+    print_header(f"Fetching backup from {sanitize_url(url)}")
     if git(["fetch", "origin", BRANCH]).returncode != 0:
         sys.exit(1)
 
@@ -526,7 +539,7 @@ def preview_backup_pull(repo: Optional[str] = None) -> None:
     if not url:
         print_error("No backup repository configured. Pass --repo owner/name to preview a backup.")
         sys.exit(1)
-    print_header(f"Fetching backup preview from {url}")
+    print_header(f"Fetching backup preview from {sanitize_url(url)}")
     with tempfile.TemporaryDirectory(prefix="skctl-restore-preview-") as directory:
         def preview_git(args):
             result = subprocess.run(
@@ -539,7 +552,7 @@ def preview_backup_pull(repo: Optional[str] = None) -> None:
             return result
 
         preview_git(["init", "--bare", "-q"])
-        preview_git(["fetch", "--quiet", "--no-tags", url, f"{BRANCH}:refs/heads/incoming"])
+        preview_git(["fetch", "--quiet", "--no-tags", "--", url, f"{BRANCH}:refs/heads/incoming"])
         head = git(["rev-parse", "--verify", "HEAD"], capture=True) if has_repo() else None
         if head is not None and head.returncode == 0:
             preview_git(["fetch", "--quiet", "--no-tags", str(BASE_DIR), "HEAD:refs/heads/local"])

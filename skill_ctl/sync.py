@@ -6,7 +6,7 @@ from typing import Annotated, Literal, Optional
 import typer
 
 from skill_ctl.backup import (
-    BRANCH, backup_lock, commit_presets, ensure_local_repo, git, has_repo, remote_url,
+    BRANCH, backup_lock, commit_presets, ensure_local_repo, git, has_repo, remote_url, sanitize_url,
 )
 from skill_ctl.constants import BASE_DIR
 from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
@@ -139,7 +139,7 @@ def sync(
         raise SystemExit(1)
     with backup_lock():
         check_sync_state()
-        print_header(f"Fetching backup from {remote_url()}")
+        print_header(f"Fetching backup from {sanitize_url(remote_url())}")
         checked_git(["fetch", "--prune", "origin"])
         remote_exists = has_commit(f"refs/remotes/{REMOTE_BRANCH}")
         if remote_exists:

@@ -1,5 +1,6 @@
 """Direct skill commands wrapping npx skills (add, list, remove, update)."""
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -107,6 +108,11 @@ def add(
         from skill_ctl.search import search
         search(preset=preset, project=project, global_only=global_install, remote_only=True)
         return
+
+    if agent and agent not in ("*", "all"):
+        if "/" in agent or "\\" in agent or ".." in agent or not re.match(r"^[a-zA-Z0-9_.-]+$", agent):
+            print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
+            sys.exit(1)
 
     npx_args = [package]
     if skill:
@@ -380,6 +386,10 @@ def remove(
     ] = False,
 ) -> None:
     """Remove an installed skill. Omit the name to pick interactively."""
+    if agent and agent not in ("*", "all"):
+        if "/" in agent or "\\" in agent or ".." in agent or not re.match(r"^[a-zA-Z0-9_.-]+$", agent):
+            print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
+            sys.exit(1)
     config = load_config()
     if preset and skill is None:
         p = preset_path(preset)

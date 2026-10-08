@@ -358,6 +358,9 @@ def preset_import(
 
 def github_repo_url(repository: str) -> str:
     """Turn GitHub's owner/repository shorthand into a clone URL."""
+    if not repository or repository.startswith("-"):
+        print_error(f"Invalid repository '{repository}': cannot start with '-'.")
+        sys.exit(1)
     if "://" in repository or repository.startswith("git@") or Path(repository).exists():
         return repository
     if repository.count("/") == 1:
@@ -446,7 +449,7 @@ def import_github_presets(
     with tempfile.TemporaryDirectory(prefix="skctl-github-") as temporary:
         clone = Path(temporary) / "repository"
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", github_repo_url(repository), str(clone)],
+            ["git", "clone", "--depth", "1", "--", github_repo_url(repository), str(clone)],
             capture_output=True, text=True, check=False,
         )
         if result.returncode != 0:
@@ -852,6 +855,11 @@ def apply(
         record_npx_result(target_project, target_preset, preset_dir, skills, before, config)
         sys.exit(code)
 
+    if agent and agent not in ("*", "all"):
+        if "/" in agent or "\\" in agent or ".." in agent or not re.match(r"^[a-zA-Z0-9_.-]+$", agent):
+            print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
+            sys.exit(1)
+
     agent_map = get_agent_dir_map(config)
     if is_global or target_project == Path.home():
         if agent in ("*", "all"):
@@ -1032,10 +1040,17 @@ def remove_skills_from_preset(preset_dir: Path, skill_names: Iterable[str]) -> l
     """Remove named skills from a preset directory and update its lockfile."""
     removed = []
     names_set = set(skill_names)
+    preset_resolved = preset_dir.resolve()
     for skill_name in names_set:
+        if not skill_name or any(c in skill_name for c in "*?[]/\\") or skill_name in (".", ".."):
+            print_warn(f"Invalid or unsafe skill name '{skill_name}'; skipping.")
+            continue
         found = False
         for pattern in (f"*/skills/{skill_name}", f"*/*/skills/{skill_name}", f"skills/{skill_name}", skill_name):
             for path in list(preset_dir.glob(pattern)):
+                resolved = path.resolve()
+                if path == preset_dir or not resolved.is_relative_to(preset_resolved):
+                    continue
                 if path.is_dir() and not path.is_symlink():
                     shutil.rmtree(path)
                     found = True
@@ -1833,6 +1848,9 @@ def unapply_one(
         project_skill_dirs(target_project, config) + list(entry.get("targets", []))
     ))
     if agent and agent not in ("*", "all"):
+        if "/" in agent or "\\" in agent or ".." in agent or not re.match(r"^[a-zA-Z0-9_.-]+$", agent):
+            print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
+            sys.exit(1)
         target_dirs = [agent_map.get(agent, f".{agent}/skills")]
     else:
         # No agent, or '*'/'all' as accepted by `apply`: sweep every directory this
@@ -1857,6 +1875,10 @@ def unapply_one(
     ):
         gone = []
         for rel_dir in target_dirs:
+            norm_target = Path(os.path.normpath(os.path.join(target_project, rel_dir, skill_name)))
+            if not norm_target.is_relative_to(target_project.resolve()):
+                print_warn(f"Skipping {rel_dir}/{skill_name}: escapes project boundary.")
+                continue
             target = target_project / rel_dir / skill_name
             if not (target.is_symlink() or target.exists()):
                 continue

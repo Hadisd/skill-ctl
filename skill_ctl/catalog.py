@@ -154,6 +154,9 @@ def get_github_token() -> Optional[str]:
 
 
 def get_json(url: str, timeout: float = 10) -> dict:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
     headers = {"Accept": "application/json", "User-Agent": "skill-ctl"}
     token = get_github_token()
     if token and "api.github.com" in url:
@@ -173,18 +176,27 @@ def parse_github_repo(url_or_str: str) -> Optional[str]:
     val = str(url_or_str).strip()
     if val.startswith("git@github.com:"):
         val = val.removeprefix("git@github.com:").removesuffix(".git")
-        return val
+        parts = val.split("/")
+        if len(parts) == 2 and re.match(r"^[a-zA-Z0-9_.-]+$", parts[0]) and re.match(r"^[a-zA-Z0-9_.-]+$", parts[1]):
+            return f"{parts[0]}/{parts[1]}"
+        return None
     try:
         parsed = urllib.parse.urlparse(val)
         if parsed.netloc and "github.com" in parsed.netloc:
             parts = [p for p in parsed.path.strip("/").split("/") if p]
             if len(parts) >= 2:
-                return f"{parts[0]}/{parts[1]}".removesuffix(".git")
+                owner, repo = parts[0], parts[1].removesuffix(".git")
+                if re.match(r"^[a-zA-Z0-9_.-]+$", owner) and re.match(r"^[a-zA-Z0-9_.-]+$", repo):
+                    if owner not in (".", "..") and repo not in (".", ".."):
+                        return f"{owner}/{repo}"
     except Exception:
         pass
     parts = val.removesuffix(".git").split("/")
     if len(parts) == 2 and parts[0] and parts[1]:
-        return val.removesuffix(".git")
+        owner, repo = parts[0], parts[1]
+        if re.match(r"^[a-zA-Z0-9_.-]+$", owner) and re.match(r"^[a-zA-Z0-9_.-]+$", repo):
+            if owner not in (".", "..") and repo not in (".", ".."):
+                return f"{owner}/{repo}"
     return None
 
 

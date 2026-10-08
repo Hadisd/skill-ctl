@@ -310,3 +310,56 @@ def test_update_all_concurrency(sandbox, monkeypatch):
     assert len(calls) == 2
     cwds = {c[1] for c in calls}
     assert cwds == {str(preset1), str(preset2)}
+
+
+def test_remove_skills_from_preset_rejects_wildcard(tmp_path):
+    from skill_ctl.presets import remove_skills_from_preset
+    preset_dir = tmp_path / "preset"
+    preset_dir.mkdir()
+    skill_a = preset_dir / "skills" / "a"
+    skill_a.mkdir(parents=True)
+    (skill_a / "SKILL.md").write_text("# A\n", encoding="utf-8")
+
+    # Attempting to remove with wildcard '*' should be rejected and NOT delete skill_a
+    removed = remove_skills_from_preset(preset_dir, ["*"])
+    assert removed == []
+    assert skill_a.exists()
+
+    # Removing specific skill name works
+    removed2 = remove_skills_from_preset(preset_dir, ["a"])
+    assert removed2 == ["a"]
+    assert not skill_a.exists()
+
+
+def test_agent_traversal_rejected(sandbox):
+    home, project, source, run = sandbox
+    res = run("apply", "demo", "--agent", "../../evil")
+    assert res.returncode != 0
+    assert "Invalid agent name" in res.stdout + res.stderr
+
+
+def test_repo_url_rejects_leading_dash():
+    from skill_ctl.presets import github_repo_url
+    from skill_ctl.backup import repo_url
+    with pytest.raises(SystemExit):
+        github_repo_url("--upload-pack=evil")
+    with pytest.raises(SystemExit):
+        repo_url("-oProxyCommand=evil")
+
+
+def test_sanitize_url_masks_tokens():
+    from skill_ctl.backup import sanitize_url
+    assert sanitize_url("https://github.com/org/repo.git") == "https://github.com/org/repo.git"
+    assert sanitize_url("https://ghp_secret@github.com/org/repo.git") == "https://***@github.com/org/repo.git"
+    assert sanitize_url("https://user:pass123@github.com/org/repo.git") == "https://***@github.com/org/repo.git"
+
+
+def test_catalog_scheme_and_repo_sanitization():
+    from skill_ctl.catalog import get_json, parse_github_repo
+    with pytest.raises(ValueError, match="Unsupported URL scheme"):
+        get_json("file:///etc/passwd")
+
+    assert parse_github_repo("owner/repo") == "owner/repo"
+    assert parse_github_repo("owner/..") is None
+    assert parse_github_repo("../repo") is None
+    assert parse_github_repo("owner/repo?branch=main") is None
