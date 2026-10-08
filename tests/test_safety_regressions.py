@@ -363,3 +363,72 @@ def test_catalog_scheme_and_repo_sanitization():
     assert parse_github_repo("owner/..") is None
     assert parse_github_repo("../repo") is None
     assert parse_github_repo("owner/repo?branch=main") is None
+
+
+def test_config_edit_prefers_visual_over_editor(monkeypatch, tmp_path):
+    from skill_ctl import config_commands
+
+    path = tmp_path / "config.yaml"
+    calls = []
+    monkeypatch.setenv("VISUAL", "subl -w")
+    monkeypatch.setenv("EDITOR", "vim")
+    monkeypatch.setattr(config_commands, "ensure_config", lambda: path)
+    monkeypatch.setattr(config_commands.subprocess, "run", calls.append)
+
+    config_commands.config_cmd("edit")
+
+    assert calls == [["subl", "-w", str(path)]]
+
+
+def test_config_edit_windows_fallback_to_notepad(monkeypatch, tmp_path):
+    from skill_ctl import config_commands
+
+    path = tmp_path / "config.yaml"
+    calls = []
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    monkeypatch.setattr(config_commands.os, "name", "nt")
+    monkeypatch.setattr(config_commands.sys, "platform", "win32")
+    monkeypatch.setattr(config_commands.shutil, "which", lambda cmd: f"C:\\Windows\\System32\\{cmd}.exe" if cmd == "notepad" else None)
+    monkeypatch.setattr(config_commands, "ensure_config", lambda: path)
+    monkeypatch.setattr(config_commands.subprocess, "run", calls.append)
+
+    config_commands.config_cmd("edit")
+
+    assert calls == [["C:\\Windows\\System32\\notepad.exe", str(path)]]
+
+
+def test_config_edit_windows_preserves_backslashes(monkeypatch, tmp_path):
+    from skill_ctl import config_commands
+
+    path = tmp_path / "config.yaml"
+    calls = []
+    monkeypatch.setenv("EDITOR", r'"C:\Program Files\My Editor\edit.exe" --wait')
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.setattr(config_commands.os, "name", "nt")
+    monkeypatch.setattr(config_commands.sys, "platform", "win32")
+    monkeypatch.setattr(config_commands, "ensure_config", lambda: path)
+    monkeypatch.setattr(config_commands.subprocess, "run", calls.append)
+
+    config_commands.config_cmd("edit")
+
+    assert calls == [[r"C:\Program Files\My Editor\edit.exe", "--wait", str(path)]]
+
+
+def test_config_edit_file_not_found_handled(monkeypatch, tmp_path):
+    from skill_ctl import config_commands
+
+    path = tmp_path / "config.yaml"
+    monkeypatch.setenv("EDITOR", "nonexistent_editor_binary")
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.setattr(config_commands, "ensure_config", lambda: path)
+
+    def mock_run(cmd):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(config_commands.subprocess, "run", mock_run)
+
+    with pytest.raises(SystemExit) as exc_info:
+        config_commands.config_cmd("edit")
+    assert exc_info.value.code == 1
+
