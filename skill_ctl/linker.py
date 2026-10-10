@@ -169,7 +169,7 @@ def apply_skills(
                     destination.unlink()
             if not copied:
                 try:
-                    destination.symlink_to(source.absolute())
+                    destination.symlink_to(source.absolute(), target_is_directory=source.is_dir())
                     placed.add(relative_path)
                     installed = True
                     continue

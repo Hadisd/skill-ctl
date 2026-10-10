@@ -1611,7 +1611,7 @@ def _legacy_link_skills(
                 # itself may point at, so the link stays attributable to the preset
                 # (and keeps tracking the preset if its own source is repointed).
                 try:
-                    dst.symlink_to(skill_src.absolute())
+                    dst.symlink_to(skill_src.absolute(), target_is_directory=skill_src.is_dir())
                     done.append(rel_dir)
                     continue
                 except OSError as e:

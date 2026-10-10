@@ -432,3 +432,33 @@ def test_config_edit_file_not_found_handled(monkeypatch, tmp_path):
         config_commands.config_cmd("edit")
     assert exc_info.value.code == 1
 
+
+def test_apply_skills_passes_target_is_directory(tmp_path, monkeypatch):
+    from skill_ctl.linker import apply_skills
+    from pathlib import Path
+
+    project = tmp_path / "project"
+    project.mkdir()
+    skill_src = tmp_path / "my_skill"
+    skill_src.mkdir()
+    (skill_src / "SKILL.md").write_text("# Test", encoding="utf-8")
+
+    captured_kwargs = []
+    real_symlink_to = Path.symlink_to
+
+    def mock_symlink_to(self, target, target_is_directory=False):
+        captured_kwargs.append(target_is_directory)
+        return real_symlink_to(self, target, target_is_directory=target_is_directory)
+
+    monkeypatch.setattr(Path, "symlink_to", mock_symlink_to)
+
+    result = apply_skills(
+        project=project,
+        skills={"my_skill": skill_src},
+        target_dirs=[".agents/skills"],
+        copy=False,
+    )
+    assert "my_skill" in result.applied
+    assert captured_kwargs == [True]
+
+
