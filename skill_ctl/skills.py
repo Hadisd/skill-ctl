@@ -274,6 +274,16 @@ def _format_agents_summary(agents: list[str]) -> str:
     return ", ".join(agents)
 
 
+def _display_path(p: Path | str) -> str:
+    path_obj = Path(p)
+    try:
+        if path_obj.is_relative_to(Path.home()):
+            return "~/" + path_obj.relative_to(Path.home()).as_posix()
+        return str(path_obj)
+    except Exception:
+        return str(path_obj)
+
+
 def list_skills(
     preset: Annotated[
         Optional[str],
@@ -348,15 +358,7 @@ def list_skills(
         return
 
     for item in skills_list:
-        p_path = Path(item["path"])
-        try:
-            if p_path.is_relative_to(Path.home()):
-                display_path = "~/" + p_path.relative_to(Path.home()).as_posix()
-            else:
-                display_path = str(p_path)
-        except Exception:
-            display_path = str(p_path)
-
+        display_path = _display_path(item["path"])
         agents_str = _format_agents_summary(item["agents"])
         src_str = item["source"] or "local"
         console.print(f"[choice]{item['name']:<24}[/choice] [path]{display_path}[/path]")
@@ -561,4 +563,217 @@ def update(
         code = run_npx_skills(args, cwd=str(Path.cwd()))
     if code != 0:
         sys.exit(code)
+
+
+def info(
+    skill: Annotated[
+        str,
+        typer.Argument(help="Name of the skill to inspect.")
+    ],
+    preset: Annotated[
+        Optional[str],
+        typer.Option("--preset", "-P", help="Inspect skill in a specific preset.")
+    ] = None,
+    project: Annotated[
+        Optional[str],
+        typer.Option("--project", "-p", help="Inspect skill for a specific project directory (default: current directory).")
+    ] = None,
+    global_scope: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Inspect global installation.")
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output machine-readable JSON.")
+    ] = False,
+) -> None:
+    """Show details, description, and installation status of a skill."""
+    import json
+    import os
+    from skill_ctl.picker import parse_skill_meta
+    from skill_ctl.catalog import format_relative_time
+
+    presets_found: list[dict] = []
+    if preset:
+        p = preset_path(preset)
+        if not p.exists():
+            print_error(f"Preset '{preset}' not found.")
+            sys.exit(1)
+        preset_skills = get_preset_skills(p)
+        if skill not in preset_skills:
+            print_error(f"Skill '{skill}' not found in preset '{preset}'.")
+            sys.exit(1)
+        presets_found.append({"name": preset, "path": str(preset_skills[skill])})
+    elif not global_scope:
+        if PRESETS_DIR.is_dir():
+            try:
+                for entry in sorted(PRESETS_DIR.iterdir()):
+                    if entry.is_dir() and not entry.name.startswith("."):
+                        ps = get_preset_skills(entry)
+                        if skill in ps:
+                            presets_found.append({"name": entry.name, "path": str(ps[skill])})
+            except OSError:
+                pass
+
+    project_data = None
+    target_root = Path(project).expanduser().resolve() if project else Path.cwd()
+    if not preset and not global_scope:
+        project_skills = scan_installed_skills(target_root, is_global=False)
+        matching = [s for s in project_skills if s["name"] == skill]
+        if matching:
+            match = matching[0]
+            p_path = Path(match["path"])
+            is_sym = p_path.is_symlink()
+            target_sym = str(p_path.resolve()) if is_sym else None
+            project_data = {
+                "root": str(target_root),
+                "path": str(p_path),
+                "is_symlink": is_sym,
+                "target": target_sym,
+                "agents": sorted(match["agents"]) if isinstance(match["agents"], (set, list)) else match["agents"],
+                "source": match.get("source"),
+            }
+
+    global_data = None
+    if not preset:
+        global_skills = scan_installed_skills(Path.home(), is_global=True)
+        matching = [s for s in global_skills if s["name"] == skill]
+        if matching:
+            match = matching[0]
+            g_path = Path(match["path"])
+            is_sym = g_path.is_symlink()
+            target_sym = str(g_path.resolve()) if is_sym else None
+            global_data = {
+                "path": str(g_path),
+                "is_symlink": is_sym,
+                "target": target_sym,
+                "agents": sorted(match["agents"]) if isinstance(match["agents"], (set, list)) else match["agents"],
+                "source": match.get("source"),
+            }
+
+    if global_scope and not global_data:
+        print_error(f"Skill '{skill}' not found in global scope.")
+        sys.exit(1)
+
+    if not preset and not presets_found and not project_data and not global_data:
+        print_error(f"Skill '{skill}' not found in presets, current project, or global scope.")
+        sys.exit(1)
+
+    # Determine canonical directory to read files and metadata
+    if presets_found:
+        canonical_dir = Path(presets_found[0]["path"])
+    elif project_data:
+        canonical_dir = Path(project_data["path"]).resolve()
+    else:
+        canonical_dir = Path(global_data["path"]).resolve()
+
+    canonical_name, description, updated_at = parse_skill_meta(canonical_dir)
+    if not description and (canonical_dir / "SKILL.md").is_file():
+        try:
+            content = (canonical_dir / "SKILL.md").read_text(encoding="utf-8", errors="replace")
+            for line in content.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and not line.startswith("---"):
+                    description = line[:120]
+                    break
+        except OSError:
+            pass
+
+    updated_str = None
+    if updated_at:
+        try:
+            updated_str = format_relative_time(updated_at)
+        except Exception:
+            updated_str = str(updated_at)
+
+    file_list = []
+    total_size = 0
+    if canonical_dir.is_dir():
+        try:
+            for root, _, files in os.walk(canonical_dir):
+                for f in sorted(files):
+                    full = Path(root) / f
+                    try:
+                        rel = full.relative_to(canonical_dir).as_posix()
+                        if not rel.startswith(".git"):
+                            file_list.append(rel)
+                            total_size += full.stat().st_size
+                    except (OSError, ValueError):
+                        pass
+        except OSError:
+            pass
+
+    if total_size < 1024:
+        size_str = f"{total_size} B"
+    elif total_size < 1024 * 1024:
+        size_str = f"{total_size / 1024:.1f} KB"
+    else:
+        size_str = f"{total_size / (1024 * 1024):.1f} MB"
+
+    source = None
+    if project_data and project_data.get("source"):
+        source = project_data["source"]
+    elif presets_found:
+        source = f"preset ({presets_found[0]['name']})"
+    elif global_data and global_data.get("source"):
+        source = global_data["source"]
+    else:
+        source = "local"
+
+    if json_output:
+        info_payload = {
+            "name": skill,
+            "description": description or None,
+            "updated": updated_str,
+            "source": source,
+            "canonical_path": str(canonical_dir),
+            "files": file_list,
+            "total_bytes": total_size,
+            "presets": presets_found,
+            "project": project_data,
+            "global": global_data,
+        }
+        print(json.dumps(info_payload, indent=2))
+        return
+
+    print_header(f"Skill: {skill}")
+    if description:
+        console.print(f"  [dim]Description:[/dim]  {description}")
+    if updated_str:
+        console.print(f"  [dim]Updated:[/dim]      {updated_str}")
+    if source:
+        console.print(f"  [dim]Source:[/dim]       {source}")
+    console.print(f"  [dim]Files:[/dim]        {len(file_list)} files ({size_str})")
+    console.print(f"  [dim]Path:[/dim]         [path]{_display_path(canonical_dir)}[/path]")
+
+    console.print("")
+    console.print("[bold]Installation Status:[/bold]")
+
+    if presets_found:
+        p_names = ", ".join(f"[choice]{p['name']}[/choice]" for p in presets_found)
+        console.print(f"  [dim]Presets:[/dim]  {p_names}")
+    else:
+        console.print("  [dim]Presets:[/dim]  [dim](none)[/dim]")
+
+    if project_data:
+        agents_str = _format_agents_summary(project_data["agents"])
+        loc_str = _display_path(project_data["path"])
+        if project_data.get("is_symlink") and project_data.get("target"):
+            loc_str += f" -> [dim]{_display_path(project_data['target'])}[/dim]"
+        console.print(f"  [dim]Project:[/dim]  [path]{_display_path(project_data['root'])}[/path]")
+        console.print(f"    • Agents: {agents_str}")
+        console.print(f"    • Link:   [path]{loc_str}[/path]")
+    else:
+        console.print("  [dim]Project:[/dim]  [dim](not installed in current project)[/dim]")
+
+    if global_data:
+        agents_str = _format_agents_summary(global_data["agents"])
+        loc_str = _display_path(global_data["path"])
+        if global_data.get("is_symlink") and global_data.get("target"):
+            loc_str += f" -> [dim]{_display_path(global_data['target'])}[/dim]"
+        console.print("  [dim]Global:[/dim]")
+        console.print(f"    • Agents: {agents_str}")
+        console.print(f"    • Link:   [path]{loc_str}[/path]")
+    else:
+        console.print("  [dim]Global:[/dim]   [dim](not installed globally)[/dim]")
 

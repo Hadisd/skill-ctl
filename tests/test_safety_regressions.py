@@ -524,3 +524,34 @@ def test_cli_lazy_exports_complete():
         cmd_id = cmd.replace("-", "_")
         assert cmd_id in cli._LAZY_EXPORTS
         assert getattr(cli, cmd_id) is not None
+
+
+def test_info_command_with_json_and_not_found(sandbox):
+    home, project, source, run = sandbox
+
+    # Check info for skill 'a'
+    result = run("info", "a", "--json")
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["name"] == "a"
+    assert "SKILL.md" in data["files"]
+    assert any(p["name"] == "demo" for p in data["presets"])
+
+    # Check info for non-existent skill
+    missing = run("info", "missing-skill")
+    assert missing.returncode == 1
+    assert "not found" in missing.stdout or "not found" in missing.stderr
+
+    # Check info with explicit preset
+    preset_res = run("info", "a", "--preset", "demo")
+    assert preset_res.returncode == 0
+    assert "Skill: a" in preset_res.stdout
+
+    # Apply preset and verify project detection in info
+    apply_res = run("apply", "demo")
+    assert apply_res.returncode == 0
+    info_applied = run("info", "a", "--json")
+    assert info_applied.returncode == 0
+    data_applied = json.loads(info_applied.stdout)
+    assert data_applied["project"] is not None
+    assert data_applied["project"]["is_symlink"] is True

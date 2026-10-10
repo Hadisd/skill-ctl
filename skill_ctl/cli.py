@@ -28,6 +28,7 @@ SUBCOMMAND_LOADERS = {
     "presets": ("skill_ctl.presets", "presets"),
     "status": ("skill_ctl.presets", "status"),
     "list": ("skill_ctl.skills", "list_skills"),
+    "info": ("skill_ctl.skills", "info"),
     "remove": ("skill_ctl.skills", "remove"),
     "update": ("skill_ctl.skills", "update"),
     "search": ("skill_ctl.search", "search"),
@@ -84,6 +85,7 @@ ROOT_COMMAND_GROUPS = (
     ("Skills", (
         ("search", "Search and install skills locally or from skills.sh"),
         ("list", "List installed skills"),
+        ("info", "Show details and installation status of a skill"),
         ("remove", "Remove an installed skill"),
         ("update", "Update installed skills"),
     )),
