@@ -14,7 +14,7 @@ def device(tmp_path, name):
     home = tmp_path / name
     home.mkdir()
     return dict(
-        os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT),
+        os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT),
         GIT_AUTHOR_NAME="sync test", GIT_AUTHOR_EMAIL="test@example.com",
         GIT_COMMITTER_NAME="sync test", GIT_COMMITTER_EMAIL="test@example.com",
         GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,

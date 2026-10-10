@@ -22,7 +22,8 @@ def sandbox(tmp_path):
     source = home / ".skill-ctl" / "presets" / "demo" / "a"
     source.mkdir(parents=True)
     (source / "SKILL.md").write_text("original preset\n", encoding="utf-8")
-    env = dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT),
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               PYTHONPATH=str(REPO_ROOT),
                GIT_AUTHOR_NAME="test", GIT_AUTHOR_EMAIL="test@example.com",
                GIT_COMMITTER_NAME="test", GIT_COMMITTER_EMAIL="test@example.com",
                GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
