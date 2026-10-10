@@ -34,6 +34,10 @@ def doctor(
         Optional[str],
         typer.Option("--project", "-p", help="Project to check (default: current directory).")
     ] = None,
+    global_check: Annotated[
+        bool,
+        typer.Option("--global", "-g", help="Check global skills (~/.agents/skills, ~/.claude/skills, ...).")
+    ] = False,
     all_projects: Annotated[
         bool,
         typer.Option("--all", help="Check every project that `apply` has recorded.")
@@ -43,7 +47,7 @@ def doctor(
         typer.Option("--fix", help="Delete the broken links and drop stale records.")
     ] = False,
 ) -> None:
-    """Check applied projects for skill links that lead nowhere.
+    """Check applied projects or global scope for skill links that lead nowhere.
 
     Deleting a preset leaves dangling symlinks in every project that used it.
     This finds them. --fix deletes them and the directories they empty.
@@ -51,7 +55,9 @@ def doctor(
     rel_dirs = all_target_dirs(load_config())
     applied = load_applied()
 
-    if all_projects:
+    if global_check:
+        projects = [Path.home()]
+    elif all_projects:
         projects = [Path(p) for p in sorted(applied)]
         if not projects:
             print_warn("No projects recorded yet; `apply` records them from now on.")
@@ -63,9 +69,10 @@ def doctor(
     gone = []
 
     for target in projects:
+        target_label = "~ (global)" if target == Path.home() else str(target)
         if not target.is_dir():
             gone.append(str(target))
-            print_warn(f"{target} no longer exists (recorded as applied)")
+            print_warn(f"{target_label} no longer exists (recorded as applied)")
             continue
 
         # Read through the project's own record, so a clone that carries one is
@@ -75,10 +82,11 @@ def doctor(
         missing_presets = [name for name in recorded if not preset_path(name).exists()]
         if not dangling and not missing_presets:
             if not all_projects:
-                print_success(f"{target} looks fine.")
+                print_success(f"{target_label} looks fine.")
             continue
 
-        print_header(str(target))
+        print_header(target_label)
+
         # A deleted preset leaves dangling links, which --fix can just delete. Its
         # copies are real directories, which only `unapply --force` should remove,
         # so the record of them has to stay until it does.

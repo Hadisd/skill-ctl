@@ -605,3 +605,23 @@ def test_presets_diff_command(sandbox):
     assert "only in 'demo'" in res.stdout
     assert "only in 'demo2'" in res.stdout
 
+
+def test_doctor_global_scope(sandbox):
+    home, project, source, run = sandbox
+
+    # Create dangling symlink in global agent directory
+    global_agent = home / ".agents" / "skills"
+    global_agent.mkdir(parents=True)
+    dangling = global_agent / "ghost_skill"
+    dangling.symlink_to(home / "does_not_exist")
+
+    res = run("doctor", "--global")
+    assert res.returncode == 0
+    assert "broken:" in res.stdout
+
+    # Run with --fix
+    fix_res = run("doctor", "--global", "--fix")
+    assert fix_res.returncode == 0
+    assert not dangling.exists(follow_symlinks=False)
+
+
