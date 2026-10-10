@@ -150,9 +150,11 @@ skctl rm                   # choose installed skills to remove
 | `skctl apply [preset] --npx` | Install through `npx skills` instead of linking |
 | `skctl apply [preset] --dry-run` | Preview links, copies, replacements, and npx commands without writing |
 | `skctl unapply [preset] [-g]` | Remove a preset's links from a project or globally |
+| `skctl diff [preset] [--skill <name>] [--patch] [--stat] [--json]` | Show differences between project skills and a preset |
 | `skctl presets` | Browse presets with fzf, or list them when fzf is unavailable. Enter opens selected preset(s) in search; Tab selects; Alt-N creates, Alt-Y clones, Alt-M merges, Alt-R renames, Alt-X deletes, and Alt-E exports. |
 | `skctl presets list` | List presets, skill counts, and applied project counts |
 | `skctl presets applied` | Show every project and the presets applied to it |
+| `skctl presets diff <preset1> <preset2>` | Compare skills and files between two presets |
 | `skctl presets rename <old> <new>` | Rename a preset and update project records |
 | `skctl status [-p <path>\|-g\|-a\|-v\|--json]` | Show comprehensive skill, preset, and agent directory status |
 | `skctl presets create <name> [--from <path>]` | Create a preset, optionally copying direct skills from a path |
@@ -164,6 +166,7 @@ skctl rm                   # choose installed skills to remove
 | `skctl presets export <name>` | Export one preset to a portable archive |
 | `skctl presets import <archive\|owner/repo>` | Preview and import a portable preset archive or GitHub preset |
 | `skctl list [--preset <name>\|-g]` | List project, preset, or global skills |
+| `skctl info <skill> [--preset <name>\|-g\|--json]` | Show details, files, and installation status of a skill |
 | `skctl search [query]` | Interactively search and apply preset and global skills |
 | `skctl search [query] --preset <name>` | Search one preset |
 | `skctl search [query] --global` | Search configured global folders |
@@ -176,8 +179,9 @@ skctl rm                   # choose installed skills to remove
 | `skctl update -g` | Update global skills |
 | `skctl self-update [--check\|--yes]` | Update the skctl CLI from its latest release |
 | `skctl version` | Print the installed skctl version (also `--version`, `-V`) |
-| `skctl doctor [--all] [--fix]` | Find or remove broken preset links |
+| `skctl doctor [--global\|-g] [--all] [--fix]` | Find or remove broken preset and global agent links |
 | `skctl backup [push\|pull\|status]` | Manage preset backups |
+
 | `skctl sync [status] [--dry-run]` | Merge and exchange preset changes between devices |
 | `skctl config [show\|path\|edit\|reset]` | Manage configuration |
 | `skctl completion fish\|bash\|zsh\|powershell` | Print shell completion code |
