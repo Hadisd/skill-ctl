@@ -59,6 +59,15 @@ THEMES: dict[str, dict[str, str]] = {
         "error": "bold underline",
         "path": "italic",
     },
+    "catppuccin": {
+        "header": "bold #cba6f7",   # mauve (Mocha)
+        "accent": "#89b4fa",        # blue
+        "choice": "bold #74c7ec",   # sapphire
+        "success": "bold #a6e3a1",  # green
+        "warn": "bold #f9e2af",     # yellow
+        "error": "bold #f38ba8",    # red
+        "path": "#94e2d5",          # teal
+    },
     "catppuccin-mocha": {
         "header": "bold #cba6f7",   # mauve
         "accent": "#89b4fa",        # blue
@@ -67,6 +76,33 @@ THEMES: dict[str, dict[str, str]] = {
         "warn": "bold #f9e2af",     # yellow
         "error": "bold #f38ba8",    # red
         "path": "#94e2d5",          # teal
+    },
+    "catppuccin-macchiato": {
+        "header": "bold #c6a0f6",   # mauve
+        "accent": "#8aadf4",        # blue
+        "choice": "bold #7dc4e4",   # sapphire
+        "success": "bold #a6da95",  # green
+        "warn": "bold #eed49f",     # yellow
+        "error": "bold #ed8796",    # red
+        "path": "#8bd5ca",          # teal
+    },
+    "catppuccin-frappe": {
+        "header": "bold #ca9ee6",   # mauve
+        "accent": "#8caaee",        # blue
+        "choice": "bold #85c1dc",   # sapphire
+        "success": "bold #a6d189",  # green
+        "warn": "bold #e5c890",     # yellow
+        "error": "bold #e78284",    # red
+        "path": "#81c8be",          # teal
+    },
+    "catppuccin-latte": {
+        "header": "bold #8839ef",   # mauve
+        "accent": "#1e66f5",        # blue
+        "choice": "bold #209fb5",   # sapphire
+        "success": "bold #40a02b",  # green
+        "warn": "bold #df8e1d",     # yellow
+        "error": "bold #d20f39",    # red
+        "path": "#179299",          # teal
     },
     "tokyo-night": {
         "header": "bold #bb9af7",   # purple
@@ -88,6 +124,21 @@ THEMES: dict[str, dict[str, str]] = {
     },
 }
 
+THEME_ALIASES: dict[str, str] = {
+    "catpuccin": "catppuccin-mocha",
+    "catpuccin-mocha": "catppuccin-mocha",
+    "catpuccin-macchiato": "catppuccin-macchiato",
+    "catpuccin-frappe": "catppuccin-frappe",
+    "catpuccin-latte": "catppuccin-latte",
+    "mocha": "catppuccin-mocha",
+    "macchiato": "catppuccin-macchiato",
+    "frappe": "catppuccin-frappe",
+    "latte": "catppuccin-latte",
+    "tokyo": "tokyo-night",
+    "tokyonight": "tokyo-night",
+    "gruvbox-dark": "gruvbox",
+}
+
 DEFAULT_THEME = "default"
 
 
@@ -96,12 +147,38 @@ def theme_names() -> list[str]:
 
 
 def resolve_theme_name(name: Optional[str]) -> str:
-    """The theme to actually use: NO_COLOR wins, then an unknown name falls back."""
+    """The theme to actually use: NO_COLOR wins, then aliases and case normalization."""
     if os.environ.get("NO_COLOR"):
         return "mono"
-    if name in THEMES:
-        return name
+    if not name:
+        return DEFAULT_THEME
+    cleaned = name.strip().lower().replace("_", "-")
+    if cleaned in THEMES:
+        return cleaned
+    if cleaned in THEME_ALIASES:
+        return THEME_ALIASES[cleaned]
+    no_dash = cleaned.replace("-", "")
+    for theme_key in THEMES:
+        if theme_key.replace("-", "") == no_dash:
+            return theme_key
+    for alias_key, target in THEME_ALIASES.items():
+        if alias_key.replace("-", "") == no_dash:
+            return target
     return DEFAULT_THEME
+
+
+def is_valid_theme(name: Optional[str]) -> bool:
+    """Check if a given string matches any theme name or known alias."""
+    if not name:
+        return False
+    cleaned = name.strip().lower().replace("_", "-")
+    no_dash = cleaned.replace("-", "")
+    return (
+        cleaned in THEMES
+        or cleaned in THEME_ALIASES
+        or any(k.replace("-", "") == no_dash for k in THEMES)
+        or any(k.replace("-", "") == no_dash for k in THEME_ALIASES)
+    )
 
 
 def build_theme(name: Optional[str] = None) -> Theme:
@@ -194,7 +271,11 @@ BAT_THEMES: dict[str, str] = {
     "dark": "Dracula",
     "light": "Catppuccin Latte",
     "mono": "ansi",
+    "catppuccin": "Catppuccin Mocha",
     "catppuccin-mocha": "Catppuccin Mocha",
+    "catppuccin-macchiato": "Catppuccin Macchiato",
+    "catppuccin-frappe": "Catppuccin Frappe",
+    "catppuccin-latte": "Catppuccin Latte",
     "tokyo-night": "TwoDark",
     "gruvbox": "gruvbox-dark",
 }

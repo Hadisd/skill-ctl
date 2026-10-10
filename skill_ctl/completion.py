@@ -61,7 +61,7 @@ complete -c skctl -n '__skctl_using sync' -a status -d 'Fetch and report sync st
 complete -c skctl -n '__skctl_using sync' -l dry-run -d 'Preview incoming and outgoing changes'
 complete -c skctl -n '__skctl_using sync' -s m -l message -r -d 'Commit message for local changes'
 complete -c skctl -n '__skctl_using config' -a 'show path edit reset' -d Action
-complete -c skctl -n '__skctl_using theme' -a 'default dark light mono catppuccin-mocha tokyo-night gruvbox' -d Theme
+complete -c skctl -n '__skctl_using theme' -a 'list default dark light mono catppuccin catppuccin-mocha catppuccin-macchiato catppuccin-frappe catppuccin-latte tokyo-night gruvbox' -d Theme
 complete -c skctl -n '__skctl_using completion' -a 'fish bash zsh powershell' -d Shell
 
 complete -c skctl -n '__skctl_using apply unapply' -s g -l global -d 'Apply or unapply skills globally'
@@ -121,7 +121,7 @@ _skctl() {{
         backup) COMPREPLY=( $(compgen -W "push pull init status --dry-run" -- "$cur") ) ;;
         sync) COMPREPLY=( $(compgen -W "status --dry-run --message --help" -- "$cur") ) ;;
         config) COMPREPLY=( $(compgen -W "show path edit reset" -- "$cur") ) ;;
-        theme) COMPREPLY=( $(compgen -W "default dark light mono catppuccin-mocha tokyo-night gruvbox" -- "$cur") ) ;;
+        theme) COMPREPLY=( $(compgen -W "list default dark light mono catppuccin catppuccin-mocha catppuccin-macchiato catppuccin-frappe catppuccin-latte tokyo-night gruvbox" -- "$cur") ) ;;
         completion) COMPREPLY=( $(compgen -W "fish bash zsh powershell" -- "$cur") ) ;;
     esac
 }}
@@ -164,7 +164,7 @@ _skctl() {{
         backup) _values 'action' push pull init status --dry-run ;;
         sync) _arguments '--dry-run[Preview incoming and outgoing changes]' '--message[Commit message for local changes]:message:' '1:action:(status)' ;;
         config) _values 'action' show path edit reset ;;
-        theme) _values 'action' default dark light mono catppuccin-mocha tokyo-night gruvbox ;;
+        theme) _values 'action' list default dark light mono catppuccin catppuccin-mocha catppuccin-macchiato catppuccin-frappe catppuccin-latte tokyo-night gruvbox ;;
         completion) _values 'shell' fish bash zsh powershell ;;
         *) _files ;;
     esac

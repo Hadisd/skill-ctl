@@ -13,8 +13,8 @@ import typer
 
 from skill_ctl.config import DEFAULT_CONFIG_YAML, ensure_config, load_config, invalidate_config_cache
 from skill_ctl.prompts import prompt_theme
-from skill_ctl.theme import THEMES
-from skill_ctl.ui import console, print_success, print_warn
+from skill_ctl.theme import THEMES, is_valid_theme, resolve_theme_name
+from skill_ctl.ui import console, print_success, print_warn, set_theme
 
 
 def get_editor_command(path: Path) -> list[str]:
@@ -71,13 +71,28 @@ def set_theme_in_config(name: str) -> None:
 
 
 
-def theme_cmd(name: Annotated[Optional[str], typer.Argument()] = None) -> None:
+def theme_cmd(
+    name: Annotated[Optional[str], typer.Argument(help="Theme name, 'list', or omit to pick interactively")] = None,
+    list_all: Annotated[bool, typer.Option("--list", "-l", help="List all available themes with color previews")] = False,
+) -> None:
     """View or change the color theme. Omit the name to pick interactively."""
     current = load_config().get("theme", "default")
+    if list_all or (name and name.lower() in ("list", "ls")):
+        console.print("[dim]Available themes:[/dim]")
+        for theme_name, palette in THEMES.items():
+            marker = "[success]*[/success]" if theme_name == current else " "
+            swatch = f"[{palette['header']}]■[/] [{palette['accent']}]■[/] [{palette['choice']}]■[/] [{palette['success']}]■[/] [{palette['warn']}]■[/] [{palette['error']}]■[/]"
+            console.print(f" {marker} {swatch}  [bold]{theme_name}[/bold]")
+        return
+
     if name is None:
         name = prompt_theme(list(THEMES), current)
-    elif name not in THEMES:
+    elif not is_valid_theme(name):
         print_warn(f"Unknown theme '{name}'. Available: {', '.join(THEMES)}")
         raise SystemExit(1)
+    else:
+        name = resolve_theme_name(name)
+
     set_theme_in_config(name)
+    set_theme(name)
     print_success(f"Theme set to '{name}'.")

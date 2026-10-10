@@ -640,3 +640,24 @@ def test_doctor_global_scope(sandbox):
     assert not (dangling.is_symlink() or dangling.exists())
 
 
+def test_theme_resolution_and_aliases():
+    from skill_ctl.theme import THEMES, resolve_theme_name, is_valid_theme, build_theme
+
+    assert resolve_theme_name("catppuccin-mocha") == "catppuccin-mocha"
+    assert resolve_theme_name("catppuccin") == "catppuccin"
+    assert resolve_theme_name("catpuccin") == "catppuccin-mocha"
+    assert resolve_theme_name("mocha") == "catppuccin-mocha"
+    assert resolve_theme_name("latte") == "catppuccin-latte"
+    assert resolve_theme_name("tokyo") == "tokyo-night"
+    assert resolve_theme_name("gruvbox-dark") == "gruvbox"
+    assert resolve_theme_name("nonexistent") == "default"
+
+    assert is_valid_theme("catppuccin")
+    assert is_valid_theme("catpuccin")
+    assert is_valid_theme("latte")
+    assert not is_valid_theme("unknown-theme")
+
+    t = build_theme("catpuccin")
+    assert t.styles["header"].color.triplet.hex == "#cba6f7"
+
+

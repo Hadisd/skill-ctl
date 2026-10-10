@@ -13,7 +13,7 @@ from skill_ctl.constants import ALL_PRESETS, PREVIEW_TOGGLE_BIND, preview_window
 from skill_ctl.config import load_config
 from skill_ctl.registry import load_applied, projects_using
 from skill_ctl.skillscan import get_preset_skills
-from skill_ctl.theme import bat_theme, fzf_color_arg
+from skill_ctl.theme import THEMES, bat_theme, fzf_color_arg, is_valid_theme, resolve_theme_name
 from skill_ctl.ui import console, print_error, print_warn
 
 ALL_SKILLS = "0"
@@ -253,16 +253,22 @@ def prompt_destination(
 
 
 def prompt_theme(names: list[str], current: str) -> str:
+    console.print("[dim]Select a theme:[/dim]")
     for index, name in enumerate(names, 1):
         marker = "[success]*[/success]" if name == current else " "
-        console.print(f" {marker} [choice]{index})[/choice] [header]{name}[/header]")
+        palette = THEMES.get(name, {})
+        if palette:
+            swatch = f"[{palette['header']}]■[/] [{palette['accent']}]■[/] [{palette['choice']}]■[/] [{palette['success']}]■[/] [{palette['warn']}]■[/] [{palette['error']}]■[/]"
+        else:
+            swatch = ""
+        console.print(f" {marker} [choice]{index})[/choice] {swatch}  [bold]{name}[/bold]")
     default = str(names.index(current) + 1) if current in names else "1"
     while True:
         picked = _ask("[bold]Theme (number or name)[/bold]", default=default)
         if picked.isdigit() and 1 <= int(picked) <= len(names):
             return names[int(picked) - 1]
-        if picked in names:
-            return picked
+        if is_valid_theme(picked):
+            return resolve_theme_name(picked)
         print_warn(f"Pick a number from 1 to {len(names)}, or a name.")
 
 
