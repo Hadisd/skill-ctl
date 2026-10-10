@@ -44,7 +44,7 @@ def truncate(value: object, width: int) -> str:
 
 def preview_command() -> str:
     """Use an installed Markdown renderer, with plain text as the fallback."""
-    skill_file = r"{5}\SKILL.md" if os.name == "nt" else "{5}/SKILL.md"
+    skill_file = r'"{5}\SKILL.md"' if os.name == "nt" else '"{5}/SKILL.md"'
     width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
     theme = shlex.quote(bat_theme(load_config().get("theme")))
     bat_options = (

@@ -462,3 +462,19 @@ def test_apply_skills_passes_target_is_directory(tmp_path, monkeypatch):
     assert captured_kwargs == [True]
 
 
+def test_preview_commands_quote_placeholders():
+    from skill_ctl.picker import preview_command
+    from skill_ctl.presets import preview_markdown_command
+    from skill_ctl.prompts import _preview_markdown_command
+
+    p_cmd = preview_command()
+    assert '"{5}' in p_cmd
+
+    pm_cmd = preview_markdown_command("{5}")
+    assert '"{5}"' in pm_cmd
+
+    pr_cmd = _preview_markdown_command("{3}")
+    assert '"{3}"' in pr_cmd
+
+
+
