@@ -275,48 +275,6 @@ def combine_presets(destination_name: str, source_names: list[str], replace: boo
     offer_add_after_create(destination_name, destination, load_config())
 
 
-def _safe_extract_preset(archive_path: Path, destination: Path) -> dict:
-    """Extract only the archive's preset directory, rejecting path traversal."""
-    try:
-        with zipfile.ZipFile(archive_path) as archive:
-            try:
-                manifest = json.loads(archive.read("manifest.json"))
-            except (KeyError, ValueError) as error:
-                raise ValueError("missing or invalid manifest.json") from error
-            if manifest.get("format") != ARCHIVE_FORMAT or not isinstance(manifest.get("preset"), str):
-                raise ValueError("unsupported preset archive")
-            for member in archive.infolist():
-                member_path = Path(member.filename)
-                if member_path.is_absolute() or ".." in member_path.parts:
-                    raise ValueError(f"unsafe archive entry: {member.filename}")
-                if member.filename == "manifest.json":
-                    continue
-                if not member.filename.startswith("preset/"):
-                    raise ValueError(f"unexpected archive entry: {member.filename}")
-                target = destination / member_path.relative_to("preset")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if not member.is_dir():
-                    with archive.open(member) as source, target.open("wb") as output:
-                        shutil.copyfileobj(source, output)
-    except (OSError, zipfile.BadZipFile) as error:
-        raise ValueError(f"could not read archive: {error}") from error
-    return manifest
-
-
-def _file_digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _preset_changes(current: Path, incoming: Path) -> list[tuple[str, Path]]:
-    current_files = {path.relative_to(current) for path in current.rglob("*") if path.is_file()}
-    incoming_files = {path.relative_to(incoming) for path in incoming.rglob("*") if path.is_file()}
-    changes = [("add", path) for path in sorted(incoming_files - current_files)]
-    changes += [("remove", path) for path in sorted(current_files - incoming_files)]
-    changes += [("change", path) for path in sorted(current_files & incoming_files)
-                if _file_digest(current / path) != _file_digest(incoming / path)]
-    return changes
-
-
 def preset_import(
     archive: str,
     rename: Optional[str] = None,
@@ -581,56 +539,6 @@ def read_global_lock() -> dict:
         return {}
     skills = data.get("skills") if isinstance(data, dict) else None
     return skills if isinstance(skills, dict) else {}
-
-def _legacy_links_into_preset(path: Path, preset_dir: Path) -> bool:
-    """True if path is a symlink pointing inside the given preset directory.
-
-    The link target is compared without following further symlinks first: a preset
-    skill may itself be a symlink into npm's store (that is what `npx skills add`
-    creates), and fully resolving would then point outside the preset.
-    """
-    if not path.is_symlink():
-        return False
-    target = Path(os.path.normpath(os.path.join(path.parent, os.readlink(path))))
-    bases = {preset_dir, preset_dir.resolve()}
-    return any(b in c.parents for c in (target, path.resolve()) for b in bases)
-
-def _legacy_prune_lockfile(project: Path, removed_names: set) -> int:
-    """Drop the skills we just deleted from the project's skills-lock.json, which
-    `apply --npx` writes. Stale entries would otherwise come back on an update."""
-    lock = project / "skills-lock.json"
-    if not removed_names or not lock.is_file():
-        return 0
-    try:
-        data = json.loads(lock.read_text(encoding="utf-8"))
-        entries = data.get("skills")
-        if not isinstance(entries, dict):
-            return 0
-        stale = [name for name in entries if name in removed_names]
-        if not stale:
-            return 0
-        for name in stale:
-            del entries[name]
-        # Drop the file only once we emptied it ourselves, and only when it holds
-        # nothing else worth keeping.
-        if not entries and set(data) <= {"version", "skills"}:
-            lock.unlink()
-        else:
-            lock.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        return len(stale)
-    except (OSError, ValueError) as e:
-        print_warn(f"Could not update {lock.name}: {e}")
-        return 0
-
-
-def _legacy_prune_empty_dirs(path: Path, stop: Path) -> Optional[Path]:
-    """Delete path and any empty parents below stop. Returns the outermost removed."""
-    removed = None
-    while path != stop and stop in path.parents and path.is_dir() and not any(path.iterdir()):
-        path.rmdir()
-        removed = path
-        path = path.parent
-    return removed
 
 
 def apply(
@@ -1484,19 +1392,6 @@ def project_skill_dirs(project: Path, config: dict) -> list:
     return found
 
 
-def _legacy_skill_kinds(project: Path, rel_dirs: list, names: Iterable[str]) -> dict:
-    """What sits at each (directory, skill) right now: a link, a real file, nothing."""
-    kinds = {}
-    for rel_dir in rel_dirs:
-        for name in names:
-            path = project / rel_dir / name
-            if path.is_symlink():
-                kinds[(rel_dir, name)] = "link"
-            elif path.exists():
-                kinds[(rel_dir, name)] = "real"
-    return kinds
-
-
 def record_npx_result(
     project: Path,
     preset: str,
@@ -1542,101 +1437,6 @@ def record_npx_result(
     record_apply(project, preset, landed, targets, "copy" if copies else "symlink",
                  placed=placed, copies=copied_paths)
     print_success(f"Recorded {len(landed)} skill{'s' if len(landed) != 1 else ''} from '{preset}' in {PROJECT_FILE}")
-
-
-def _legacy_owned_copies(recorded: dict, preset: str) -> set:
-    """Skill names this project already holds as copies of the given preset.
-
-    A directory that is not a link belongs to whoever put it there, so `apply`
-    leaves it alone - except when it is a copy `apply` itself made, which it must
-    overwrite or a second `apply --copy` would update nothing.
-    """
-    entry = recorded.get(preset) or {}
-    if entry.get("mode") != "copy":
-        return set()
-    return set(entry.get("skills", []))
-
-
-def _legacy_link_skills(
-    target_project: Path,
-    target_preset: str,
-    skills: dict[str, Path],
-    dest_rel_dirs: list,
-    use_copy: bool,
-    force: bool = False,
-    owned: Optional[set] = None,
-) -> None:
-    """Put one preset's skills into a project, and record that it happened."""
-    from rich.progress import track
-
-    print_header(f"Applying preset '{target_preset}' ({len(skills)} skills) to {target_project}")
-
-    owned = owned or set()
-    items = sorted(skills.items())
-    # One line per skill, not per skill per directory. Past a few dozen even that
-    # scrolls the useful output away, so those get a progress bar and a summary.
-    per_skill = len(items) <= LIST_LIMIT
-    linked = 0
-    kept = 0
-    applied: dict[str, Path] = {}
-
-    for skill_name, skill_src in track(
-        items, description="Linking skills", console=console,
-        transient=True, disable=per_skill,
-    ):
-        done = []
-        for rel_dir in dest_rel_dirs:
-            target_dir = target_project / rel_dir
-            target_dir.mkdir(parents=True, exist_ok=True)
-            dst = target_dir / skill_name
-
-            if dst.is_symlink():
-                # A link is cheap to replace and the preset is the newer answer.
-                dst.unlink()
-            elif dst.exists():
-                # Real files are someone's work: a skill installed straight into
-                # the project, or edited in place. Only our own copy, or an
-                # explicit --force, may be thrown away.
-                if not (force or skill_name in owned):
-                    print_warn(f"Kept existing {rel_dir}/{skill_name} (not a link; --force replaces it)")
-                    kept += 1
-                    continue
-                print_warn(f"Replacing existing {rel_dir}/{skill_name}")
-                if dst.is_dir():
-                    shutil.rmtree(dst)
-                else:
-                    dst.unlink()
-
-            if not use_copy:
-                # Link to the path inside the preset, not to what the preset skill
-                # itself may point at, so the link stays attributable to the preset
-                # (and keeps tracking the preset if its own source is repointed).
-                try:
-                    dst.symlink_to(skill_src.absolute(), target_is_directory=skill_src.is_dir())
-                    done.append(rel_dir)
-                    continue
-                except OSError as e:
-                    # Windows refuses symlinks without Developer Mode or elevation.
-                    print_warn(f"Cannot create symlinks ({e.strerror}); copying instead.")
-                    use_copy = True  # warn once, copy the rest
-
-            shutil.copytree(skill_src, dst)
-            done.append(rel_dir)
-
-        if done:
-            linked += 1
-            applied[skill_name] = skill_src
-        if per_skill and done:
-            print_success(f"{skill_name} -> {', '.join(done)}")
-
-    verb = "Copied" if use_copy else "Linked"
-    print_success(f"{verb} {linked} skill{'s' if linked != 1 else ''} into {', '.join(dest_rel_dirs)}")
-    if kept:
-        print_warn(f"Left {kept} existing director{'ies' if kept != 1 else 'y'} in place; --force replaces them.")
-    # Only what actually landed is recorded: `unapply` and --resync act on this,
-    # and neither may touch a directory this run refused to overwrite.
-    if applied:
-        record_apply(target_project, target_preset, applied, dest_rel_dirs, "copy" if use_copy else "symlink")
 
 
 def link_skills(
