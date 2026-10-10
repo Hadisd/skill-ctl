@@ -41,25 +41,12 @@ SUBCOMMAND_LOADERS = {
 }
 
 _LAZY_EXPORTS = {
-    "add": ("skill_ctl.skills", "add"),
-    "list_skills": ("skill_ctl.skills", "list_skills"),
-    "remove": ("skill_ctl.skills", "remove"),
-    "update": ("skill_ctl.skills", "update"),
-    "apply": ("skill_ctl.presets", "apply"),
-    "unapply": ("skill_ctl.presets", "unapply"),
-    "presets": ("skill_ctl.presets", "presets"),
+    **{func_name: (mod_name, func_name) for mod_name, func_name in SUBCOMMAND_LOADERS.values()},
+    **{cmd.replace("-", "_"): loader for cmd, loader in SUBCOMMAND_LOADERS.items()},
     "edit_preset": ("skill_ctl.presets", "edit_preset"),
-    "status": ("skill_ctl.presets", "status"),
     "get_preset_skills": ("skill_ctl.presets", "get_preset_skills"),
-    "search": ("skill_ctl.search", "search"),
-    "backup": ("skill_ctl.backup", "backup"),
-    "sync": ("skill_ctl.sync", "sync"),
-    "doctor": ("skill_ctl.doctor", "doctor"),
-    "completion": ("skill_ctl.completion", "completion"),
-    "config_cmd": ("skill_ctl.config_commands", "config_cmd"),
-    "theme_cmd": ("skill_ctl.config_commands", "theme_cmd"),
-    "self_update": ("skill_ctl.self_update", "self_update"),
 }
+
 
 
 def __getattr__(name: str):

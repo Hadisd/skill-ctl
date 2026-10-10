@@ -515,6 +515,12 @@ def test_export_preset_skips_external_symlinks(tmp_path):
         assert "preset/secret_link.txt" not in names
 
 
+def test_cli_lazy_exports_complete():
+    from skill_ctl import cli
 
-
-
+    for cmd, (mod, func_name) in cli.SUBCOMMAND_LOADERS.items():
+        assert func_name in cli._LAZY_EXPORTS
+        assert getattr(cli, func_name) is not None
+        cmd_id = cmd.replace("-", "_")
+        assert cmd_id in cli._LAZY_EXPORTS
+        assert getattr(cli, cmd_id) is not None
