@@ -624,6 +624,6 @@ def test_doctor_global_scope(sandbox):
     # Run with --fix
     fix_res = run("doctor", "--global", "--fix")
     assert fix_res.returncode == 0
-    assert not dangling.exists(follow_symlinks=False)
+    assert not (dangling.is_symlink() or dangling.exists())
 
 

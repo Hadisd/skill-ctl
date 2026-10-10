@@ -1,6 +1,7 @@
 """Generic Rich console formatting."""
 
 import re
+import sys
 from typing import Optional
 
 from rich.console import Console
@@ -48,13 +49,22 @@ def set_theme(name: Optional[str]) -> None:
 
 def _safe_print(target_console: _LazyConsole, text: str) -> None:
     """Rich itself can fail to render (e.g. a broken/mismatched optional
-    dependency such as rich's own unicode-width tables), which must not
-    swallow the message a caller is trying to report. Fall back to plain
-    text so the actual error always reaches the user."""
+    dependency such as rich's own unicode-width tables, or legacy Windows
+    codepages), which must not swallow the message a caller is trying to report.
+    Fall back to plain text so the actual error always reaches the user."""
     try:
         target_console.print(text)
     except Exception:
-        print(_TAG_RE.sub("", text))
+        clean_text = _TAG_RE.sub("", text)
+        out = sys.stderr if target_console._stderr else sys.stdout
+        try:
+            print(clean_text, file=out)
+        except UnicodeEncodeError:
+            clean_text = clean_text.replace("◇", ">").replace("✓", "+").replace("✗", "x")
+            try:
+                print(clean_text, file=out)
+            except Exception:
+                out.write(clean_text.encode("ascii", errors="replace").decode("ascii") + "\n")
 
 
 def print_header(text: str) -> None:
