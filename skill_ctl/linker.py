@@ -20,6 +20,23 @@ def links_into_preset(path: Path, preset_dir: Path) -> bool:
     return any(base in candidate.parents for candidate in (target, path.resolve()) for base in bases)
 
 
+def _is_subpath_of(child: Path, parent: Path) -> tuple[bool, Path]:
+    """Check if child is subpath of parent (case-insensitive and symlink-resilient)."""
+    try:
+        return True, child.relative_to(parent)
+    except Exception:
+        pass
+    try:
+        c_str = os.path.normcase(os.path.abspath(str(child)))
+        p_str = os.path.normcase(os.path.abspath(str(parent))).rstrip("\\/") + os.sep
+        if c_str.startswith(p_str):
+            rel = os.path.abspath(str(child))[len(p_str):]
+            return True, Path(rel)
+    except Exception:
+        pass
+    return False, Path()
+
+
 def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, list[str]]) -> None:
     """Move a preset and retarget its links, rolling back on replacement failure."""
     links = {path for path in old_dir.rglob("*") if path.is_symlink()}
@@ -41,24 +58,14 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
             original = os.readlink(link)
             target = Path(os.path.normpath(os.path.join(link.parent, original)))
             for old_base, new_base in bases.items():
-                if not (target.is_relative_to(old_base) or any(b in target.parents for b in (old_base, old_base.resolve()))):
+                is_sub, rel_to_old = _is_subpath_of(target, old_base)
+                if not is_sub:
                     continue
-                try:
-                    rel_to_old = target.relative_to(old_base)
-                except ValueError:
-                    rel_to_old = target.resolve().relative_to(old_base.resolve())
                 new_target = new_base / rel_to_old
-                internal = any(b in link.parents for b in (old_base, old_base.resolve()))
-                if internal:
-                    try:
-                        rel_link = link.relative_to(old_base)
-                    except ValueError:
-                        rel_link = Path(os.path.relpath(link, old_base))
-                    moved_link = new_base / rel_link
-                else:
-                    moved_link = link
+                is_int, rel_link = _is_subpath_of(link, old_base)
+                moved_link = new_base / rel_link if is_int else link
                 replacement = str(new_target) if os.path.isabs(original) else os.path.relpath(new_target, moved_link.parent)
-                temporary_parent = old_dir.parent if internal else link.parent
+                temporary_parent = old_dir.parent if is_int else link.parent
                 temporary = Path(cleanup.enter_context(tempfile.TemporaryDirectory(
                     prefix=".skctl-rename-", dir=temporary_parent,
                 )))
