@@ -12,3 +12,5 @@ tui.md
 .*
 !.git
 !.gitignore
+!.github/
+!.github/**
