@@ -32,6 +32,12 @@ def export_preset(source: Path, name: str, destination: Path, skills: list[str])
     with zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         for path in sorted(source.rglob("*")):
+            if path.is_symlink():
+                try:
+                    if not path.resolve().is_relative_to(source.resolve()):
+                        continue
+                except (OSError, ValueError):
+                    continue
             archive_name = Path("preset") / path.relative_to(source)
             if path.is_dir():
                 archive.writestr(archive_name.as_posix() + "/", "")

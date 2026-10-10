@@ -488,5 +488,33 @@ def test_wants_picker_returns_false_when_fzf_missing(monkeypatch):
     assert picker.wants_picker({"prompts": {"picker": "auto"}}) is False
 
 
+def test_export_preset_skips_external_symlinks(tmp_path):
+    import zipfile
+    from skill_ctl.archive import export_preset
+
+    preset_dir = tmp_path / "preset"
+    preset_dir.mkdir()
+    (preset_dir / "safe.txt").write_text("safe content", encoding="utf-8")
+
+    external_secret = tmp_path / "secret.env"
+    external_secret.write_text("SECRET_TOKEN=12345", encoding="utf-8")
+
+    # Create symlink pointing outside preset
+    symlink_secret = preset_dir / "secret_link.txt"
+    try:
+        symlink_secret.symlink_to(external_secret)
+    except OSError:
+        pytest.skip("Symlink creation not permitted in this environment")
+
+    archive_zip = tmp_path / "exported.zip"
+    export_preset(preset_dir, "my_preset", archive_zip, ["safe_skill"])
+
+    with zipfile.ZipFile(archive_zip) as z:
+        names = z.namelist()
+        assert "preset/safe.txt" in names
+        assert "preset/secret_link.txt" not in names
+
+
+
 
 
