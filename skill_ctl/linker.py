@@ -41,11 +41,24 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
             original = os.readlink(link)
             target = Path(os.path.normpath(os.path.join(link.parent, original)))
             for old_base, new_base in bases.items():
-                if not target.is_relative_to(old_base):
-                    continue
-                new_target = new_base / target.relative_to(old_base)
-                internal = link.is_relative_to(old_base)
-                moved_link = new_base / link.relative_to(old_base) if internal else link
+                try:
+                    rel_to_old = target.relative_to(old_base)
+                except ValueError:
+                    try:
+                        rel_to_old = target.resolve().relative_to(old_base.resolve())
+                    except ValueError:
+                        continue
+                try:
+                    rel_link = link.relative_to(old_base)
+                    internal = True
+                except ValueError:
+                    try:
+                        rel_link = link.resolve().relative_to(old_base.resolve())
+                        internal = True
+                    except ValueError:
+                        internal = False
+                new_target = new_base / rel_to_old
+                moved_link = new_base / rel_link if internal else link
                 replacement = str(new_target) if os.path.isabs(original) else os.path.relpath(new_target, moved_link.parent)
                 temporary_parent = old_dir.parent if internal else link.parent
                 temporary = Path(cleanup.enter_context(tempfile.TemporaryDirectory(
