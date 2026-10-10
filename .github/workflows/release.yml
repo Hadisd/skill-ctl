@@ -33,7 +33,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Run test suite
-        run: uv run pytest -n auto
+        run: uv run --extra dev pytest -n auto
 
   release:
     name: Build & Publish Release
