@@ -25,6 +25,7 @@ SUBCOMMAND_LOADERS = {
     "add": ("skill_ctl.skills", "add"),
     "apply": ("skill_ctl.presets", "apply"),
     "unapply": ("skill_ctl.presets", "unapply"),
+    "diff": ("skill_ctl.presets", "diff_cmd"),
     "presets": ("skill_ctl.presets", "presets"),
     "status": ("skill_ctl.presets", "status"),
     "list": ("skill_ctl.skills", "list_skills"),
@@ -80,6 +81,7 @@ ROOT_COMMAND_GROUPS = (
         ("add", "Install a skill into a preset, project, or global folders"),
         ("apply", "Link a preset into the current project"),
         ("unapply", "Remove a preset's links from the current project"),
+        ("diff", "Show differences between project skills and a preset"),
         ("presets", "Browse and manage presets"),
     )),
     ("Skills", (
@@ -112,6 +114,7 @@ PRESET_ACTION_USAGE = {
     "delete": "skctl presets delete <name>",
     "export": "skctl presets export <name> [--output ARCHIVE]",
     "import": "skctl presets import <archive|owner/repo> [--preset NAME] [--rename NAME] [--replace] [--dry-run]",
+    "diff": "skctl presets diff <preset1> <preset2>",
 }
 
 

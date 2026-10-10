@@ -555,3 +555,53 @@ def test_info_command_with_json_and_not_found(sandbox):
     data_applied = json.loads(info_applied.stdout)
     assert data_applied["project"] is not None
     assert data_applied["project"]["is_symlink"] is True
+
+
+def test_diff_command_clean_and_modified(sandbox):
+    home, project, source, run = sandbox
+
+    # Apply preset 'demo' with copy
+    apply_res = run("apply", "demo", "--copy")
+    assert apply_res.returncode == 0
+
+    # Diff should be identical initially
+    diff_res = run("diff", "demo", "--json")
+    assert diff_res.returncode == 0
+    data = json.loads(diff_res.stdout)
+    assert data["identical"] is True
+
+    # Modify SKILL.md in project copy
+    copied_skill = project / ".agents" / "skills" / "a" / "SKILL.md"
+    copied_skill.write_text("modified project skill\n", encoding="utf-8")
+
+    # Diff should detect modification
+    diff_mod = run("diff", "demo", "--json")
+    assert diff_mod.returncode == 0
+    data_mod = json.loads(diff_mod.stdout)
+    assert data_mod["identical"] is False
+    assert data_mod["skills"]["a"]["status"] == "modified"
+
+    # Diff with patch should show unified diff
+    diff_patch = run("diff", "demo", "--patch")
+    assert diff_patch.returncode == 0
+    assert "--- preset:demo/a/SKILL.md" in diff_patch.stdout
+    assert "+++ project:a/SKILL.md" in diff_patch.stdout
+
+    # Diff with exit-code should exit with code 1
+    diff_exit = run("diff", "demo", "--exit-code")
+    assert diff_exit.returncode == 1
+
+
+def test_presets_diff_command(sandbox):
+    home, project, source, run = sandbox
+
+    # Create a second preset 'demo2' with skill 'b'
+    b_dir = home / ".skill-ctl" / "presets" / "demo2" / "b"
+    b_dir.mkdir(parents=True)
+    (b_dir / "SKILL.md").write_text("skill b\n", encoding="utf-8")
+
+    res = run("presets", "diff", "demo", "demo2")
+    assert res.returncode == 0
+    assert "only in 'demo'" in res.stdout
+    assert "only in 'demo2'" in res.stdout
+
