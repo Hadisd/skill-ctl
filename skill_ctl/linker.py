@@ -88,10 +88,10 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
         replaced = []
         try:
             for link, updated, backup in replacements:
+                replaced.append((link, backup))
                 if sys.platform == "win32" and (link.is_symlink() or link.exists()):
                     link.unlink()
                 updated.replace(link)
-                replaced.append((link, backup))
         except OSError:
             for link, backup in reversed(replaced):
                 if sys.platform == "win32" and (link.is_symlink() or link.exists()):
