@@ -43,7 +43,6 @@ def truncate(value: object, width: int) -> str:
 
 def preview_markdown_command(field_placeholder: str = "{5}") -> str:
     """Render markdown preview using bat or glow when available, falling back to cat/type."""
-    placeholder = field_placeholder if (field_placeholder.startswith('"') and field_placeholder.endswith('"')) else f'"{field_placeholder}"'
     width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
     theme = shlex.quote(bat_theme(load_config().get("theme")))
     bat_options = (
@@ -51,13 +50,14 @@ def preview_markdown_command(field_placeholder: str = "{5}") -> str:
         f'--squeeze-blank --wrap=character --terminal-width={width}'
     )
     if shutil.which("bat"):
-        return f"bat {bat_options} {placeholder}"
+        return f"bat {bat_options} {field_placeholder}"
     if shutil.which("batcat"):
-        return f"batcat {bat_options} {placeholder}"
+        return f"batcat {bat_options} {field_placeholder}"
     if shutil.which("glow"):
-        return f"glow --style dark {placeholder}"
+        return f"glow --style dark {field_placeholder}"
     command = "type" if os.name == "nt" else "cat"
-    return f"{command} {placeholder}"
+    return f"{command} {field_placeholder}"
+
 
 
 def preview_command() -> str:
