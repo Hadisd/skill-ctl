@@ -35,10 +35,8 @@ from skill_ctl.ui import console, print_header, print_success, print_warn, print
 from skill_ctl.prompts import prompt_apply_destination, prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
 from skill_ctl.archive import export_preset as write_archive, safe_extract_preset, preset_changes
 from skill_ctl.linker import apply_skills, links_into_preset, prune_lockfile, prune_empty_dirs, skill_kinds, owned_copies, rename_preset_directory
-from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
+from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker, preview_markdown_command
 from skill_ctl.runner import run_npx_skills
-# Re-exported: it lives in its own module so callers that only count skills
-# need not import this one, but it stays reachable as presets.get_preset_skills.
 from skill_ctl.skillscan import get_preset_skills
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.registry import (
@@ -46,25 +44,6 @@ from skill_ctl.registry import (
     record_apply, forget_apply, keep_only, presets_for, projects_using,
 )
 from skill_ctl.backup import maybe_auto_push
-
-
-def preview_markdown_command(field_placeholder: str = "{5}") -> str:
-    """Render markdown preview using bat or glow when available, falling back to cat/type."""
-    placeholder = field_placeholder if (field_placeholder.startswith('"') and field_placeholder.endswith('"')) else f'"{field_placeholder}"'
-    width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
-    theme = shlex.quote(bat_theme(load_config().get("theme")))
-    bat_options = (
-        f'--color=always --paging=never --style=plain --language=md --theme={theme} '
-        f'--squeeze-blank --wrap=character --terminal-width={width}'
-    )
-    if shutil.which("bat"):
-        return f"bat {bat_options} {placeholder}"
-    if shutil.which("batcat"):
-        return f"batcat {bat_options} {placeholder}"
-    if shutil.which("glow"):
-        return f"glow --style dark {placeholder}"
-    command = "type" if os.name == "nt" else "cat"
-    return f"{command} {placeholder}"
 
 def preset_path(preset_name: str) -> Path:
     """Resolve a preset name to its directory, rejecting anything that escapes

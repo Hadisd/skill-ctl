@@ -20,7 +20,6 @@ from skill_ctl.constants import BASE_DIR, DEFAULT_PREVIEW_WINDOW, PREVIEW_TOGGLE
 from skill_ctl.config import load_config
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import print_warn
-from skill_ctl.prompts import prompt_skills
 
 # Descriptions are truncated for fzf, whose lines cannot wrap. The preview pane
 # shows the whole SKILL.md anyway.
@@ -42,9 +41,9 @@ def truncate(value: object, width: int) -> str:
     return text if len(text) <= width else text[:width - 1] + "…"
 
 
-def preview_command() -> str:
-    """Use an installed Markdown renderer, with plain text as the fallback."""
-    skill_file = r'"{5}\SKILL.md"' if os.name == "nt" else '"{5}/SKILL.md"'
+def preview_markdown_command(field_placeholder: str = "{5}") -> str:
+    """Render markdown preview using bat or glow when available, falling back to cat/type."""
+    placeholder = field_placeholder if (field_placeholder.startswith('"') and field_placeholder.endswith('"')) else f'"{field_placeholder}"'
     width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
     theme = shlex.quote(bat_theme(load_config().get("theme")))
     bat_options = (
@@ -52,13 +51,19 @@ def preview_command() -> str:
         f'--squeeze-blank --wrap=character --terminal-width={width}'
     )
     if shutil.which("bat"):
-        return f"bat {bat_options} {skill_file}"
+        return f"bat {bat_options} {placeholder}"
     if shutil.which("batcat"):
-        return f"batcat {bat_options} {skill_file}"
+        return f"batcat {bat_options} {placeholder}"
     if shutil.which("glow"):
-        return f"glow --style dark {skill_file}"
+        return f"glow --style dark {placeholder}"
     command = "type" if os.name == "nt" else "cat"
-    return f"{command} {skill_file}"
+    return f"{command} {placeholder}"
+
+
+def preview_command() -> str:
+    """Use an installed Markdown renderer, with plain text as the fallback."""
+    skill_file = r"{5}\SKILL.md" if os.name == "nt" else "{5}/SKILL.md"
+    return preview_markdown_command(skill_file)
 
 
 _METADATA_CACHE: Optional[dict] = None
@@ -252,6 +257,7 @@ def pick(rows: list, header: Optional[str] = None, action: str = "apply", query:
             return chosen
         print_warn("fzf could not run here; falling back to a numbered list.")
 
+    from skill_ctl.prompts import prompt_skills
     labels = [f"{row.get('location', row['preset'])}/{row['skill']}" for row in rows]
     chosen_labels = set(prompt_skills(labels, action=action))
     return [row for row, label in zip(rows, labels) if label in chosen_labels]

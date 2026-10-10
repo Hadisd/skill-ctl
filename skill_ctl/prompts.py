@@ -18,24 +18,7 @@ from skill_ctl.ui import console, print_error, print_warn
 
 ALL_SKILLS = "0"
 
-
-def _preview_markdown_command(field_placeholder: str = "{3}") -> str:
-    """Render markdown preview using bat or glow when available, falling back to cat/type."""
-    placeholder = field_placeholder if (field_placeholder.startswith('"') and field_placeholder.endswith('"')) else f'"{field_placeholder}"'
-    width = '"%FZF_PREVIEW_COLUMNS%"' if sys.platform == "win32" else '"$FZF_PREVIEW_COLUMNS"'
-    theme = shlex.quote(bat_theme(load_config().get("theme")))
-    bat_options = (
-        f'--color=always --paging=never --style=plain --language=md --theme={theme} '
-        f'--squeeze-blank --wrap=character --terminal-width={width}'
-    )
-    if shutil.which("bat"):
-        return f"bat {bat_options} {placeholder}"
-    if shutil.which("batcat"):
-        return f"batcat {bat_options} {placeholder}"
-    if shutil.which("glow"):
-        return f"glow --style dark {placeholder}"
-    command = "type" if sys.platform == "win32" else "cat"
-    return f"{command} {placeholder}"
+from skill_ctl.picker import preview_markdown_command as _preview_markdown_command
 
 
 def _ask(label: str, **kwargs: object) -> str:
