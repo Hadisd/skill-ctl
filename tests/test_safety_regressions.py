@@ -13,6 +13,17 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def safe_rmtree(path: Path) -> None:
+    def _remove_readonly(func, p, _):
+        try:
+            os.chmod(p, 0o777)
+            func(p)
+        except Exception:
+            pass
+    if path.exists():
+        shutil.rmtree(path, onerror=_remove_readonly)
+
+
 @pytest.fixture
 def sandbox(tmp_path):
     home = tmp_path / "home"
@@ -85,7 +96,7 @@ def remote_backup(tmp_path, sandbox):
 def test_destructive_pull_requires_yes_without_terminal(sandbox, remote_backup, fresh):
     home, project, source, run = sandbox
     if fresh:
-        shutil.rmtree(home / ".skill-ctl" / ".git")
+        safe_rmtree(home / ".skill-ctl" / ".git")
         args = ["backup", "pull", "--repo", remote_backup]
     else:
         args = ["backup", "pull", "--force"]
@@ -119,7 +130,7 @@ def test_pull_preview_switching_remote_preserves_local_history(tmp_path, sandbox
 def test_pull_preview_does_not_initialize_local_store(sandbox, remote_backup):
     home, project, source, run = sandbox
     base = home / ".skill-ctl"
-    shutil.rmtree(base / ".git")
+    safe_rmtree(base / ".git")
     for name in ("config.yaml", ".gitignore", ".backup.lock"):
         (base / name).unlink(missing_ok=True)
     result = run("backup", "pull", "--repo", remote_backup, "--dry-run")
@@ -178,10 +189,10 @@ def test_filtered_unapply_preserves_remaining_selection(sandbox, selection, expe
     assert "demo" in index["projects"][str(project)]
     for directory in (".agents", ".claude"):
         if (project / directory).exists():
-            shutil.rmtree(project / directory)
+            safe_rmtree(project / directory)
     synced = run("apply", "--resync")
     assert synced.returncode == 0, synced.stdout + synced.stderr
-    actual = {str(path.parent.relative_to(project)) for path in project.rglob("SKILL.md")}
+    actual = {path.parent.relative_to(project).as_posix() for path in project.rglob("SKILL.md")}
     assert actual == expected
 
 
@@ -248,7 +259,8 @@ def test_rename_rolls_back_when_link_replacement_fails(sandbox, monkeypatch):
     replace = Path.replace
 
     def fail_second_replacement(path, destination):
-        if path.name == "updated" and ".claude" in destination.parts:
+        dest_str = str(destination)
+        if path.name == "updated" and (".claude" in dest_str or any(".claude" in part for part in getattr(destination, "parts", ()))):
             raise PermissionError("cannot replace link")
         return replace(path, destination)
 

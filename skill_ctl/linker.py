@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import sys
 import tempfile
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -60,10 +61,14 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
         replaced = []
         try:
             for link, updated, backup in replacements:
+                if sys.platform == "win32" and (link.is_symlink() or link.exists()):
+                    link.unlink()
                 updated.replace(link)
                 replaced.append((link, backup))
         except OSError:
             for link, backup in reversed(replaced):
+                if sys.platform == "win32" and (link.is_symlink() or link.exists()):
+                    link.unlink()
                 backup.replace(link)
             new_dir.rename(old_dir)
             raise
