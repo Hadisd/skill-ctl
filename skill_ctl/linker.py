@@ -11,13 +11,20 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 
+def _clean_path_str(p: object) -> str:
+    s = str(p)
+    if s.startswith(("\\\\?\\", "\\??\\")):
+        s = s[4:]
+    return s
+
+
 def links_into_preset(path: Path, preset_dir: Path) -> bool:
     """Whether a symlink points into a preset without resolving its source."""
     if not path.is_symlink():
         return False
-    target = Path(os.path.normpath(os.path.join(path.parent, os.readlink(path))))
+    target = Path(os.path.normpath(os.path.join(path.parent, _clean_path_str(os.readlink(path)))))
     bases = {preset_dir, preset_dir.resolve()}
-    return any(base in candidate.parents for candidate in (target, path.resolve()) for base in bases)
+    return any(_is_subpath_of(target, base)[0] or _is_subpath_of(path.resolve(), base)[0] for base in bases)
 
 
 def _is_subpath_of(child: Path, parent: Path) -> tuple[bool, Path]:
@@ -27,10 +34,12 @@ def _is_subpath_of(child: Path, parent: Path) -> tuple[bool, Path]:
     except Exception:
         pass
     try:
-        c_str = os.path.normcase(os.path.abspath(str(child)))
-        p_str = os.path.normcase(os.path.abspath(str(parent))).rstrip("\\/") + os.sep
+        c_str = os.path.normcase(os.path.abspath(_clean_path_str(child)))
+        p_str = os.path.normcase(os.path.abspath(_clean_path_str(parent))).rstrip("\\/") + os.sep
+        if c_str == p_str.rstrip(os.sep):
+            return True, Path()
         if c_str.startswith(p_str):
-            rel = os.path.abspath(str(child))[len(p_str):]
+            rel = os.path.abspath(_clean_path_str(child))[len(p_str):]
             return True, Path(rel)
     except Exception:
         pass
@@ -55,7 +64,7 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
     with ExitStack() as cleanup:
         replacements = []
         for link in sorted(links):
-            original = os.readlink(link)
+            original = _clean_path_str(os.readlink(link))
             target = Path(os.path.normpath(os.path.join(link.parent, original)))
             for old_base, new_base in bases.items():
                 is_sub, rel_to_old = _is_subpath_of(target, old_base)
