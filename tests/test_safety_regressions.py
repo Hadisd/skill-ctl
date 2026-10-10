@@ -477,4 +477,16 @@ def test_preview_commands_quote_placeholders():
     assert '"{3}"' in pr_cmd
 
 
+def test_wants_picker_returns_false_when_fzf_missing(monkeypatch):
+    from skill_ctl import picker
+
+    monkeypatch.setattr(picker.shutil, "which", lambda cmd: None)
+
+    # Even with explicit=True or mode="fzf", should return False if fzf is absent
+    assert picker.wants_picker({"prompts": {"picker": "fzf"}}) is False
+    assert picker.wants_picker({}, explicit=True) is False
+    assert picker.wants_picker({"prompts": {"picker": "auto"}}) is False
+
+
+
 

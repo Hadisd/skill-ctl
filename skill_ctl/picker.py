@@ -232,6 +232,8 @@ def wants_picker(config: dict, explicit: bool = False) -> bool:
     is a terminal for it to draw on, "fzf" always tries, "numbers" never does.
     Asking for it on the command line overrides the setting.
     """
+    if not shutil.which("fzf"):
+        return False
     if explicit:
         return True
     mode = str(config.get("prompts", {}).get("picker", "auto")).lower()
@@ -239,7 +241,7 @@ def wants_picker(config: dict, explicit: bool = False) -> bool:
         return True
     if mode in ("numbers", "number", "none", "false"):
         return False
-    return bool(shutil.which("fzf")) and sys.stdin.isatty()
+    return sys.stdin.isatty()
 
 
 def pick(rows: list, header: Optional[str] = None, action: str = "apply", query: str = "") -> list:
