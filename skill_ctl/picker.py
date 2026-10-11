@@ -12,12 +12,14 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
-from skill_ctl.catalog import format_relative_time
+from skill_ctl.catalog import format_relative_time, shell_quote
 from skill_ctl.constants import BASE_DIR, DEFAULT_PREVIEW_WINDOW, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config
+from skill_ctl.picker_filter import prioritize_names
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import print_warn
 
@@ -285,20 +287,31 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
         ))
         for row in rows
     ]
-    result = subprocess.run(
-        [
-            "fzf", "--multi", "--ansi", "--tabstop", "2", "--query", query,
-            "--delimiter", "\t", "--with-nth", "1,2,3,4",
-            "--header", header or DEFAULT_HEADER,
-            "--color", fzf_color_arg(load_config().get("theme")),
-            "--expect", "alt-p,alt-g,alt-x,alt-a",
-            "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
-            "--preview", preview_command(),
-            "--preview-window", preview_window_options(),
-        ],
-        input="\n".join(lines), stdout=subprocess.PIPE, text=True,
-        encoding="utf-8", errors="replace",
-    )
+    with tempfile.TemporaryDirectory(prefix="skctl-picker-") as temporary:
+        snapshot = Path(temporary) / "rows.json"
+        snapshot.write_text(json.dumps(lines), encoding="utf-8")
+        reload_rows = (
+            f"{shell_quote(sys.executable)} -m skill_ctl.picker_filter "
+            f"{shell_quote(str(snapshot))} {{q}}"
+        )
+        result = subprocess.run(
+            [
+                "fzf", "--multi", "--ansi", "--no-sort", "--no-hscroll", "--tabstop", "2", "--query", query,
+                "--delimiter", "\t", "--with-nth", "1,2,3,4", "--nth", "1..4",
+                "--id-nth", "5",
+                "--header", header or DEFAULT_HEADER,
+                "--color", fzf_color_arg(load_config().get("theme")),
+                "--expect", "alt-p,alt-g,alt-x,alt-a",
+                "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                # Restore selected paths against every row before filtering again.
+                "--bind", f"change:disable-search+reload-sync({reload_rows})",
+                "--bind", "load:enable-search",
+                "--preview", preview_command(),
+                "--preview-window", preview_window_options(),
+            ],
+            input="\n".join(prioritize_names(lines, query)), stdout=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
+        )
     if result.returncode >= 2 and result.returncode != 130:
         return [], False
     output_lines = result.stdout.splitlines()

@@ -52,7 +52,7 @@ Use it to:
 
 You need Python 3.10 or later and Node.js.
 
-For interactive pickers and Markdown previews, install [`fzf`](https://github.com/junegunn/fzf) and [`bat`](https://github.com/sharkdp/bat). Without `fzf`, `skctl` falls back to numbered prompts; without `bat`, previews use plain `cat`.
+For interactive pickers and Markdown previews, install a recent [`fzf`](https://github.com/junegunn/fzf) with `--id-nth` support and [`bat`](https://github.com/sharkdp/bat). Without `fzf`, `skctl` falls back to numbered prompts; without `bat`, previews use plain `cat`.
 
 ```bash
 git clone https://github.com/Hadisd/skill-ctl.git
@@ -357,6 +357,10 @@ Use `--pick` or `-i` to open fzf. The controls are:
 The preview pane displays `SKILL.md`. It uses `bat`, `batcat`, `glow`, or `cat`, in that order. The `bat` preview wraps to the pane width and collapses repeated blank lines.
 
 The location column is dim magenta. Descriptions are dim. Selecting a global result does not apply it again because it is already available globally.
+
+Result columns stay aligned while typing, even when a match is far into a description. Text that does not fit remains available in the preview pane.
+
+Matches in the Skill column appear first. Other matches follow, with fzf's relevance order within each group.
 
 In remote search results:
 - `Alt-P` installs the selected remote skills into a preset.
