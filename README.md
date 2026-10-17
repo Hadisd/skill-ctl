@@ -1,6 +1,8 @@
 # skill-ctl (`skctl`)
 
-![skill-ctl workflow](assets/skill-ctl-banner.png)
+<p align="center">
+  <img src="assets/skill-ctl.webp" alt="Hadisd/skill-ctl in 15 seconds" width="100%">
+</p>
 
 **Store skills once. Use them where they fit.**
 
