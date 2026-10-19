@@ -115,7 +115,7 @@ def query_cache_key(
     ).hexdigest()
 
 
-# Cached per process: write_rows runs as a fresh `python -m skill_ctl.catalog
+# Cached per process: write_rows runs as a fresh `python -m skill_ctl.commands.catalog
 # --rows` subprocess on every fzf keystroke, so one config read per process is
 # already the natural cadence - no need to re-read it per row.
 _colors = None
@@ -749,7 +749,7 @@ def choose_with_fzf(
     with tempfile.TemporaryDirectory(prefix="skctl-search-") as temporary:
         root = Path(temporary)
         preview = preview_command()
-        rows = f"{shell_quote(sys.executable)} -m skill_ctl.catalog --rows --cache-dir {shell_quote(str(root))} --query {{q}}"
+        rows = f"{shell_quote(sys.executable)} -m skill_ctl.commands.catalog --rows --cache-dir {shell_quote(str(root))} --query {{q}}"
         if owner:
             rows += f" --owner {shell_quote(owner)}"
         if remotes:
@@ -797,7 +797,7 @@ def choose_with_fzf(
                     "--bind",
                     f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
                     "--bind",
-                    f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
+                    f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.commands.catalog --source-file {{2}})",
                     "--bind",
                     f"start:reload({rows})+refresh-preview",
                     "--bind",
@@ -982,7 +982,7 @@ def choose_repo_skills(source: str, skills: list[str]) -> list[str]:
 
 def preview_command() -> str:
     """Render catalog metadata and SKILL.md through bat when it is available."""
-    command = f"{shell_quote(sys.executable)} -m skill_ctl.catalog --preview-line {{}}"
+    command = f"{shell_quote(sys.executable)} -m skill_ctl.commands.catalog --preview-line {{}}"
     renderer = "bat" if shutil.which("bat") else "batcat" if shutil.which("batcat") else None
     if not renderer:
         return command

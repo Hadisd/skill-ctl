@@ -1393,3 +1393,14 @@ def test_search_cli_limit_option(monkeypatch):
 
     search_mod.search(query="presenter", remote="skills.sh", limit=99, json_output=True)
     assert called_kwargs.get("limit") == 99
+
+
+def test_catalog_module_invocations(tmp_path):
+    for mod in ("skill_ctl.commands.catalog", "skill_ctl.catalog"):
+        res = subprocess.run(
+            [sys.executable, "-m", mod, "--rows", "--cache-dir", str(tmp_path), "--query", ""],
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0, f"{mod} failed with: {res.stderr}"
+

@@ -67,6 +67,13 @@ _MODULE_MAP = {
 class _CompatibilityLoader:
     def __init__(self, target_name: str):
         self.target_name = target_name
+        self._target_spec = None
+        self._target_loader = None
+
+    def _ensure_loader(self):
+        if self._target_spec is None:
+            self._target_spec = importlib.util.find_spec(self.target_name)
+            self._target_loader = self._target_spec.loader if self._target_spec else None
 
     def create_module(self, spec):
         mod = importlib.import_module(self.target_name)
@@ -76,15 +83,46 @@ class _CompatibilityLoader:
     def exec_module(self, module):
         pass
 
+    def get_code(self, fullname):
+        self._ensure_loader()
+        if self._target_loader and hasattr(self._target_loader, "get_code"):
+            return self._target_loader.get_code(self.target_name)
+        return None
+
+    def get_source(self, fullname):
+        self._ensure_loader()
+        if self._target_loader and hasattr(self._target_loader, "get_source"):
+            return self._target_loader.get_source(self.target_name)
+        return None
+
+    def is_package(self, fullname):
+        self._ensure_loader()
+        if self._target_loader and hasattr(self._target_loader, "is_package"):
+            return self._target_loader.is_package(self.target_name)
+        return False
+
+    def get_filename(self, fullname):
+        self._ensure_loader()
+        if self._target_loader and hasattr(self._target_loader, "get_filename"):
+            return self._target_loader.get_filename(self.target_name)
+        return None
+
 
 class _CompatibilityFinder:
     def find_spec(self, fullname: str, path=None, target=None):
         if fullname.startswith("skill_ctl."):
             sub = fullname[len("skill_ctl.") :]
             if sub in _MODULE_MAP:
+                target_name = _MODULE_MAP[sub]
+                try:
+                    target_spec = importlib.util.find_spec(target_name)
+                    origin = target_spec.origin if target_spec else None
+                except Exception:
+                    origin = None
                 return importlib.machinery.ModuleSpec(
                     fullname,
-                    _CompatibilityLoader(_MODULE_MAP[sub]),
+                    _CompatibilityLoader(target_name),
+                    origin=origin,
                 )
         return None
 
