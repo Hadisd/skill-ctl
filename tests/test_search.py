@@ -164,7 +164,7 @@ def test_global_filter_excludes_presets_and_uses_custom_paths(env):
     (skill / "SKILL.md").write_text("# custom-global\n", encoding="utf-8")
     config = env["home"] / ".skill-ctl" / "config.yaml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(f'global_skill_dirs:\n  - "{custom}"\n', encoding="utf-8")
+    config.write_text(f'global_skill_dirs:\n  - "{custom.as_posix()}"\n', encoding="utf-8")
 
     found = rows(env, "--global")
     assert [row["skill"] for row in found] == ["custom-global"]
@@ -209,16 +209,21 @@ def fake_fzf(tmp_path, picks, exit_code=0):
     bin_dir.mkdir(exist_ok=True)
     wanted = " ".join(f"'{name}'" for name in picks)
     if os.name == "nt":
-        script = bin_dir / "fzf.cmd"
+        py_script = bin_dir / "fzf.py"
         py_code = (
-            f"import sys; "
-            f"picks = [{wanted}]; "
-            f"lines = sys.stdin.readlines(); "
-            f"[sys.stdout.write(l) for p in picks for l in lines if p in l]; "
-            f"sys.exit({exit_code})"
+            f"import sys\n"
+            f"picks = {list(picks)!r}\n"
+            f"lines = sys.stdin.readlines()\n"
+            f"for p in picks:\n"
+            f"    for l in lines:\n"
+            f"        if p in l:\n"
+            f"            sys.stdout.write(l)\n"
+            f"sys.exit({exit_code})\n"
         )
+        py_script.write_text(py_code, encoding="utf-8")
+        script = bin_dir / "fzf.cmd"
         script.write_text(
-            f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\nexit /b %errorlevel%\r\n',
+            f'@echo off\r\n"{sys.executable}" "%~dp0fzf.py"\r\nexit /b %errorlevel%\r\n',
             encoding="utf-8",
         )
     else:
