@@ -7,6 +7,29 @@ import importlib.machinery
 import importlib.util
 import sys
 
+if sys.platform == "win32":
+    # On Windows, CRT _isatty() returns True for character devices like NUL / DEVNULL.
+    # Wrap sys.stdin.isatty to verify it is actually an interactive console handle via GetConsoleMode.
+    try:
+        import ctypes
+        import msvcrt
+
+        _orig_stdin_isatty = sys.stdin.isatty
+
+        def _win_stdin_isatty():
+            if not _orig_stdin_isatty():
+                return False
+            try:
+                handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+                mode = ctypes.c_ulong()
+                return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)))
+            except Exception:
+                return False
+
+        sys.stdin.isatty = _win_stdin_isatty
+    except Exception:
+        pass
+
 __version__ = "0.1.19"
 
 _MODULE_MAP = {

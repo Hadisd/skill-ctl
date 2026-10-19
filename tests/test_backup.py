@@ -113,20 +113,21 @@ def test_init_without_repo_or_gh_fails_clearly(tmp_path):
     import shutil
 
     env = make_home(tmp_path, "home1")
-    bin_dir = tmp_path / "empty-bin"
-    bin_dir.mkdir(exist_ok=True)
-    git_bin = shutil.which("git")
     if sys.platform == "win32":
-        if git_bin:
-            (bin_dir / "git.cmd").write_text(f'@"{git_bin}" %*\r\n', encoding="utf-8")
-        (bin_dir / "python.cmd").write_text(f'@"{sys.executable}" %*\r\n', encoding="utf-8")
-        (bin_dir / "python3.cmd").write_text(f'@"{sys.executable}" %*\r\n', encoding="utf-8")
+        env["PATH"] = os.pathsep.join(
+            p
+            for p in os.environ.get("PATH", "").split(os.pathsep)
+            if "github cli" not in p.lower() and not (Path(p) / "gh.exe").is_file()
+        )
     else:
+        bin_dir = tmp_path / "empty-bin"
+        bin_dir.mkdir(exist_ok=True)
+        git_bin = shutil.which("git")
         if git_bin:
             (bin_dir / "git").symlink_to(git_bin)
         (bin_dir / "python3").symlink_to(sys.executable)
         (bin_dir / "python").symlink_to(sys.executable)
-    env["PATH"] = str(bin_dir)
+        env["PATH"] = str(bin_dir)
 
     res = skctl(env, "backup", "init")
     assert res.returncode == 1
