@@ -171,12 +171,11 @@ def run_installer_with_windows_handling(command: list[str]) -> int:
 def self_update(
     check: Annotated[
         bool,
-        typer.Option("--check", help="Report whether an update is available without installing it.")
+        typer.Option(
+            "--check", help="Report whether an update is available without installing it."
+        ),
     ] = False,
-    yes: Annotated[
-        bool,
-        typer.Option("--yes", "-y", help="Skip the confirmation prompt.")
-    ] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation prompt.")] = False,
 ) -> None:
     """Check for a newer skctl release and install it.
 
@@ -204,7 +203,9 @@ def self_update(
         return
 
     cleanup_old_executables()
-    command = installer_command(Path(sys.prefix), Path(sys.executable), release.wheel_url, release.tag)
+    command = installer_command(
+        Path(sys.prefix), Path(sys.executable), release.wheel_url, release.tag
+    )
     try:
         returncode = run_installer_with_windows_handling(command)
     except OSError as error:

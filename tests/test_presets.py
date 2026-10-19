@@ -41,7 +41,10 @@ def env(tmp_path):
 def skctl(env, *args):
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
-        cwd=env["proj"], env=env["env"], capture_output=True, text=True,
+        cwd=env["proj"],
+        env=env["env"],
+        capture_output=True,
+        text=True,
     )
 
 
@@ -124,7 +127,18 @@ def test_apply_resync_dry_run_does_not_restore_missing_links(env):
 
 def test_apply_dry_run_does_not_reindex_a_project_record(env):
     (env["proj"] / "skills-applied.json").write_text(
-        json.dumps({"version": 1, "presets": {"mypreset": {"skills": ["tdd"], "targets": [".agents/skills"], "mode": "symlink"}}}),
+        json.dumps(
+            {
+                "version": 1,
+                "presets": {
+                    "mypreset": {
+                        "skills": ["tdd"],
+                        "targets": [".agents/skills"],
+                        "mode": "symlink",
+                    }
+                },
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -144,7 +158,11 @@ def test_apply_rejects_unknown_skill(env):
 def test_apply_interactive_selection(env):
     proc = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "mypreset", "-s"],
-        cwd=env["proj"], env=env["env"], input="1\n", capture_output=True, text=True,
+        cwd=env["proj"],
+        env=env["env"],
+        input="1\n",
+        capture_output=True,
+        text=True,
     )
     assert proc.returncode == 0, proc.stderr
     # The menu is numbered over sorted names: 1) review, 2) tdd
@@ -223,7 +241,8 @@ def test_pick_still_asks_even_with_a_named_preset(env, tmp_path):
     bin_dir.mkdir()
     script = bin_dir / "fzf"
     script.write_text(
-        "#!/bin/sh\ncat | grep 'review'\nexit 0\n", encoding="utf-8",
+        "#!/bin/sh\ncat | grep 'review'\nexit 0\n",
+        encoding="utf-8",
     )
     script.chmod(0o755)
     env_with_fzf = dict(env, env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"))
@@ -277,8 +296,10 @@ def test_presets_browse_cancel_does_not_list_presets(env, tmp_path):
     force_fzf(env)
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "presets"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, [], exit_code=130)),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, [], exit_code=130)),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert "Presets in" not in res.stdout
@@ -289,8 +310,10 @@ def test_all_presets_offers_every_skill_wherever_it_is_filed(env, tmp_path):
     force_fzf(env)
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "--all-presets"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, ["review", "tdd"])),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, ["review", "tdd"])),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     # 'review' only exists in mypreset, 'tdd' in both; fzf saw them all at once.
@@ -307,8 +330,10 @@ def test_all_presets_applies_each_presets_share(env, tmp_path):
 
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "-A"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, ["review", "only-here"])),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, ["review", "only-here"])),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     record = json.loads((env["proj"] / "skills-applied.json").read_text())["presets"]
@@ -321,8 +346,10 @@ def test_all_presets_picking_nothing_applies_nothing(env, tmp_path):
     force_fzf(env)
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "-A"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, [], exit_code=130)),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, [], exit_code=130)),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert "Nothing picked" in " ".join(res.stdout.split())
@@ -332,8 +359,10 @@ def test_all_presets_picking_nothing_applies_nothing(env, tmp_path):
 def test_apply_pick_chooses_the_skills_in_fzf(env, tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "mypreset", "--pick"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, ["review"])),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, ["review"])),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert (env["proj"] / ".agents" / "skills" / "review").is_symlink()
@@ -343,8 +372,10 @@ def test_apply_pick_chooses_the_skills_in_fzf(env, tmp_path):
 def test_apply_pick_cancelled_applies_nothing(env, tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "mypreset", "-i"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, [], exit_code=130)),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, [], exit_code=130)),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert "Nothing picked" in " ".join(res.stdout.split())
@@ -360,8 +391,11 @@ def test_picker_numbers_setting_keeps_the_numbered_list(env, tmp_path):
 
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "mypreset", "-s"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, ["review"])),
-        input="2\n", capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, ["review"])),
+        input="2\n",
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     # The numbered menu is sorted: 1) review, 2) tdd. fzf would have picked review.
@@ -376,8 +410,10 @@ def test_picker_fzf_setting_is_used_without_the_flag(env, tmp_path):
 
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "apply", "mypreset", "-s"],
-        cwd=env["proj"], env=with_fzf(env, fake_fzf(tmp_path, ["review"])),
-        capture_output=True, text=True,
+        cwd=env["proj"],
+        env=with_fzf(env, fake_fzf(tmp_path, ["review"])),
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert (env["proj"] / ".agents" / "skills" / "review").is_symlink()
@@ -402,7 +438,12 @@ def test_bare_apply_respects_ask_apply_false(env):
 @pytest.mark.skipif(sys.platform == "win32", reason="pty is unix-only")
 def test_bare_apply_prompts_for_specific_skill_or_preset(env, tmp_path):
     """Running bare `apply` in a terminal prompts: destination, 1) Specific skill(s), 2) An entire preset."""
-    out = run_in_pty(env, ["apply"], drain_seconds=4.0, script=[(0.2, b"1\n"), (0.4, b"2\n"), (0.6, b"1\n"), (0.8, b"\n")])
+    out = run_in_pty(
+        env,
+        ["apply"],
+        drain_seconds=4.0,
+        script=[(0.2, b"1\n"), (0.4, b"2\n"), (0.6, b"1\n"), (0.8, b"\n")],
+    )
     assert "Where would you like to apply" in out
     assert "What would you like to apply" in out
     assert "Specific skill(s)" in out
@@ -421,13 +462,16 @@ def test_bare_apply_choice_1_picks_specific_skill(env, tmp_path):
     script.chmod(0o755)
     env_with_fzf = dict(env, env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"))
 
-    out = run_in_pty(env_with_fzf, ["apply"], drain_seconds=4.0, script=[(0.2, b"1\n"), (0.4, b"1\n"), (0.8, b"\n")])
+    out = run_in_pty(
+        env_with_fzf,
+        ["apply"],
+        drain_seconds=4.0,
+        script=[(0.2, b"1\n"), (0.4, b"1\n"), (0.8, b"\n")],
+    )
     assert "Where would you like to apply" in out
     assert "What would you like to apply" in out
     assert (env["proj"] / ".agents" / "skills" / "review").is_symlink()
     assert not (env["proj"] / ".agents" / "skills" / "tdd").exists()
-
-
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="pty is unix-only")
@@ -439,7 +483,8 @@ def test_unapply_confirmed_in_a_real_terminal(env, skill_count):
     assert res.returncode == 0, res.stderr
 
     out = run_in_pty(
-        env, ["unapply", "mypreset"],
+        env,
+        ["unapply", "mypreset"],
         script=[(0.2, b"1\n"), (0.2, b"y\n")],
     )
 
@@ -561,7 +606,10 @@ def test_bare_unapply_on_an_unused_project_is_not_an_error(env, tmp_path):
     clean.mkdir()
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "unapply"],
-        cwd=clean, env=env["env"], capture_output=True, text=True,
+        cwd=clean,
+        env=env["env"],
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
 
@@ -674,7 +722,9 @@ def test_preset_browser_preview_shows_combine_origin(env):
 def test_clone_offers_to_add_more_skills_after_creation(env):
     make_skill(env["presets"] / "extra" / ".agents" / "skills", "unique")
 
-    out = run_in_pty(env, ["presets", "clone", "mypreset", "research-paper"], script=[(0.8, b"3\n")])
+    out = run_in_pty(
+        env, ["presets", "clone", "mypreset", "research-paper"], script=[(0.8, b"3\n")]
+    )
 
     assert "Add more skills to 'research-paper'?" in out
     assert "No, Done" in out
@@ -691,10 +741,14 @@ def test_create_offers_nothing_when_no_other_preset_has_skills(env, tmp_path):
 def test_create_offers_and_copies_via_the_numbered_list(env):
     """Off fzf (`picker: numbers`), the same flow falls back to the numbered list."""
     force_numbers(env)
-    out = run_in_pty(env, ["presets", "create", "newpreset"], script=[
-        (0.8, b"1\n"),   # Pick from installed presets or global folders.
-        (0.8, b"1\n"),   # the list, sorted by 'preset/skill': mypreset/review first
-    ])
+    out = run_in_pty(
+        env,
+        ["presets", "create", "newpreset"],
+        script=[
+            (0.8, b"1\n"),  # Pick from installed presets or global folders.
+            (0.8, b"1\n"),  # the list, sorted by 'preset/skill': mypreset/review first
+        ],
+    )
 
     assert "Created preset 'newpreset'" in out, out
     assert "Added 1 skill to 'newpreset': review" in out, out
@@ -783,12 +837,14 @@ def test_remove_without_skill_uses_preset_picker(env, monkeypatch):
     monkeypatch.setattr(skills_mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(skills_mod, "wants_picker", lambda config: True)
     monkeypatch.setattr(
-        skills_mod, "pick",
+        skills_mod,
+        "pick",
         lambda rows, header=None, action="apply": [row for row in rows if row["skill"] == "review"],
     )
     seen = {}
     monkeypatch.setattr(
-        skills_mod, "run_npx_skills",
+        skills_mod,
+        "run_npx_skills",
         lambda args, cwd=None: seen.update(args=args, cwd=cwd) or 0,
     )
 
@@ -817,7 +873,8 @@ def test_create_can_copy_an_untracked_global_skill(env, monkeypatch, capsys):
     )
 
     presets_mod.offer_add_after_create(
-        "newpreset", preset_dir,
+        "newpreset",
+        preset_dir,
         {"prompts": {}, "global_skill_dirs": [str(global_skill.parent)]},
     )
 
@@ -860,12 +917,19 @@ def test_create_reinstalls_a_tracked_global_skill(env, monkeypatch):
     monkeypatch.setattr(presets_mod, "run_npx_skills", fake_npx)
 
     presets_mod.offer_add_after_create(
-        "newpreset", preset_dir,
+        "newpreset",
+        preset_dir,
         {"prompts": {}, "global_skill_dirs": [str(global_skill.parent)]},
     )
 
     assert seen["args"] == [
-        "add", "owner/package", "--skill", "tracked", "--agent", "universal", "-y",
+        "add",
+        "owner/package",
+        "--skill",
+        "tracked",
+        "--agent",
+        "universal",
+        "-y",
     ]
     assert (preset_dir / "skills-lock.json").is_file()
 
@@ -953,10 +1017,14 @@ def test_invalid_default_preset_falls_back(tmp_path):
     (home / ".skill-ctl" / "config.yaml").write_text("default_preset:\n", encoding="utf-8")
 
     res = subprocess.run(
-        [sys.executable, "-c",
-         "from skill_ctl.config import load_config; print(load_config()['default_preset'])"],
+        [
+            sys.executable,
+            "-c",
+            "from skill_ctl.config import load_config; print(load_config()['default_preset'])",
+        ],
         env=dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip().endswith("default")
@@ -992,10 +1060,17 @@ def test_npx_args_target_skills_dir_and_repeat_skill_flags(env, monkeypatch):
 
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod, "run_npx_skills", fake_npx)
-    monkeypatch.setattr(presets_mod, "load_config", lambda: {
-        "default_preset": "mypreset", "apply_targets": [".agents/skills"],
-        "apply_mode": "symlink", "prompts": {"ask_apply": False}, "custom_agents": {},
-    })
+    monkeypatch.setattr(
+        presets_mod,
+        "load_config",
+        lambda: {
+            "default_preset": "mypreset",
+            "apply_targets": [".agents/skills"],
+            "apply_mode": "symlink",
+            "prompts": {"ask_apply": False},
+            "custom_agents": {},
+        },
+    )
     monkeypatch.chdir(env["proj"])
 
     with pytest.raises(SystemExit):
@@ -1033,17 +1108,22 @@ def npx_stub(env, presets_mod, monkeypatch, installs, kind="copy"):
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod, "run_npx_skills", fake_npx)
     monkeypatch.setattr(registry, "APPLIED_FILE", env["home"] / ".skill-ctl" / "applied.json")
-    monkeypatch.setattr(presets_mod, "load_config", lambda: {
-        "default_preset": "mypreset", "apply_targets": [".agents/skills"],
-        "apply_mode": "symlink", "prompts": {"ask_apply": False}, "custom_agents": {},
-    })
+    monkeypatch.setattr(
+        presets_mod,
+        "load_config",
+        lambda: {
+            "default_preset": "mypreset",
+            "apply_targets": [".agents/skills"],
+            "apply_mode": "symlink",
+            "prompts": {"ask_apply": False},
+            "custom_agents": {},
+        },
+    )
     monkeypatch.chdir(env["proj"])
 
 
 def record(env) -> dict:
-    return json.loads(
-        (env["proj"] / "skills-applied.json").read_text(encoding="utf-8")
-    )["presets"]
+    return json.loads((env["proj"] / "skills-applied.json").read_text(encoding="utf-8"))["presets"]
 
 
 def test_npx_apply_records_what_landed(env, monkeypatch):
@@ -1101,9 +1181,11 @@ def test_npx_apply_notices_a_symlink_it_replaced_with_a_copy(env, monkeypatch):
 
     npx_stub(env, presets_mod, monkeypatch, [(".agents/skills", "tdd")])
     presets_mod.link_skills(
-        env["proj"], "mypreset",
+        env["proj"],
+        "mypreset",
         {"tdd": env["presets"] / "mypreset" / ".agents" / "skills" / "tdd"},
-        [".agents/skills"], False,
+        [".agents/skills"],
+        False,
     )
     assert (env["proj"] / ".agents" / "skills" / "tdd").is_symlink()
 
@@ -1120,7 +1202,10 @@ def test_missing_npx_reports_clearly(env):
     broken = dict(env["env"], PATH="/nonexistent")
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "list"],
-        cwd=env["proj"], env=broken, capture_output=True, text=True,
+        cwd=env["proj"],
+        env=broken,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 1
     assert "npx" in res.stdout + res.stderr
@@ -1142,13 +1227,17 @@ def test_apply_falls_back_to_copy_when_symlinks_fail(env, monkeypatch):
     # the machine-wide index in the real HOME collects an entry under /tmp.
     monkeypatch.setattr(registry, "APPLIED_FILE", env["home"] / ".skill-ctl" / "applied.json")
     # Stub the config so the test never reads or creates anything in the real HOME.
-    monkeypatch.setattr(presets_mod, "load_config", lambda: {
-        "default_preset": "mypreset",
-        "apply_targets": [".agents/skills"],
-        "apply_mode": "symlink",
-        "prompts": {"ask_apply": False},
-        "custom_agents": {},
-    })
+    monkeypatch.setattr(
+        presets_mod,
+        "load_config",
+        lambda: {
+            "default_preset": "mypreset",
+            "apply_targets": [".agents/skills"],
+            "apply_mode": "symlink",
+            "prompts": {"ask_apply": False},
+            "custom_agents": {},
+        },
+    )
     monkeypatch.chdir(env["proj"])
 
     presets_mod.apply("mypreset")
@@ -1184,9 +1273,11 @@ def test_update_accepts_a_preset_with_a_lockfile(env, monkeypatch):
 
     monkeypatch.setattr(skills_mod, "PRESETS_DIR", env["presets"])
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(
-        skills_mod, "run_npx_skills",
+        skills_mod,
+        "run_npx_skills",
         lambda args, cwd: calls.append((args, cwd)) or 0,
     )
 
@@ -1211,7 +1302,8 @@ def test_update_all_updates_locked_presets_and_skips_legacy_ones(env, monkeypatc
 
     monkeypatch.setattr(skills_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(
-        skills_mod, "run_npx_skills",
+        skills_mod,
+        "run_npx_skills",
         lambda args, cwd: calls.append((args, cwd)) or 0,
     )
 
@@ -1222,6 +1314,7 @@ def test_update_all_updates_locked_presets_and_skips_legacy_ones(env, monkeypatc
 
 def test_add_installed_to_global(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(Path, "home", lambda: env["home"])
 
@@ -1240,6 +1333,7 @@ def test_add_installed_to_global(env, monkeypatch):
 
 def test_add_installed_to_global_copy(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(Path, "home", lambda: env["home"])
 
@@ -1258,10 +1352,13 @@ def test_add_installed_to_global_copy(env, monkeypatch):
 
 def test_add_without_package_to_project_searches_remote(env, monkeypatch):
     from skill_ctl import skills as skills_mod
+
     monkeypatch.setattr(skills_mod.sys.stdin, "isatty", lambda: True)
     seen = {}
+
     def fake_search(**kwargs):
         seen["search"] = kwargs
+
     monkeypatch.setattr("skill_ctl.search.search", fake_search)
     skills_mod.add(package=None, project=str(env["proj"]))
     assert seen["search"]["project"] == str(env["proj"])
@@ -1270,10 +1367,13 @@ def test_add_without_package_to_project_searches_remote(env, monkeypatch):
 
 def test_add_without_package_to_global_searches_remote(env, monkeypatch):
     from skill_ctl import skills as skills_mod
+
     monkeypatch.setattr(skills_mod.sys.stdin, "isatty", lambda: True)
     seen = {}
+
     def fake_search(**kwargs):
         seen["search"] = kwargs
+
     monkeypatch.setattr("skill_ctl.search.search", fake_search)
     skills_mod.add(package=None, global_install=True)
     assert seen["search"]["global_only"] is True
@@ -1282,18 +1382,25 @@ def test_add_without_package_to_global_searches_remote(env, monkeypatch):
 
 def test_add_interactive_destination_prompt_project(env, monkeypatch):
     from skill_ctl import skills as skills_mod
+
     monkeypatch.setattr(skills_mod.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(skills_mod, "load_config", lambda: {
-        "default_destination": "prompt",
-        "apply_targets": [".agents/skills"],
-        "apply_mode": "symlink",
-        "prompts": {"ask_destination": True, "picker": "none"},
-        "custom_agents": {},
-    })
+    monkeypatch.setattr(
+        skills_mod,
+        "load_config",
+        lambda: {
+            "default_destination": "prompt",
+            "apply_targets": [".agents/skills"],
+            "apply_mode": "symlink",
+            "prompts": {"ask_destination": True, "picker": "none"},
+            "custom_agents": {},
+        },
+    )
     monkeypatch.setattr(skills_mod, "prompt_destination", lambda *a, **k: (None, True, False))
     seen = {}
+
     def fake_search(**kwargs):
         seen["search"] = kwargs
+
     monkeypatch.setattr("skill_ctl.search.search", fake_search)
     skills_mod.add(package=None)
     assert seen["search"]["project"] == "."
@@ -1302,18 +1409,25 @@ def test_add_interactive_destination_prompt_project(env, monkeypatch):
 
 def test_add_interactive_destination_prompt_global(env, monkeypatch):
     from skill_ctl import skills as skills_mod
+
     monkeypatch.setattr(skills_mod.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(skills_mod, "load_config", lambda: {
-        "default_destination": "prompt",
-        "apply_targets": [".agents/skills"],
-        "apply_mode": "symlink",
-        "prompts": {"ask_destination": True, "picker": "none"},
-        "custom_agents": {},
-    })
+    monkeypatch.setattr(
+        skills_mod,
+        "load_config",
+        lambda: {
+            "default_destination": "prompt",
+            "apply_targets": [".agents/skills"],
+            "apply_mode": "symlink",
+            "prompts": {"ask_destination": True, "picker": "none"},
+            "custom_agents": {},
+        },
+    )
     monkeypatch.setattr(skills_mod, "prompt_destination", lambda *a, **k: (None, False, True))
     seen = {}
+
     def fake_search(**kwargs):
         seen["search"] = kwargs
+
     monkeypatch.setattr("skill_ctl.search.search", fake_search)
     skills_mod.add(package=None)
     assert seen["search"]["global_only"] is True
@@ -1358,6 +1472,7 @@ def test_presets_edit_add_flag(env):
 
 def test_presets_edit_interactive_menu_done(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(presets_mod.Prompt, "ask", lambda *a, **k: "5")
@@ -1367,6 +1482,7 @@ def test_presets_edit_interactive_menu_done(env, monkeypatch):
 
 def test_apply_interactive_destination_prompt_global(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod, "load_config", lambda: {})
     monkeypatch.setattr(Path, "home", lambda: env["home"])
@@ -1385,6 +1501,7 @@ def test_apply_interactive_destination_prompt_global(env, monkeypatch):
 
 def test_apply_confirmation_declined(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(presets_mod, "prompt_apply_destination", lambda *a, **k: "1")
@@ -1398,6 +1515,7 @@ def test_apply_confirmation_declined(env, monkeypatch):
 
 def test_unapply_confirmation_declined(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.chdir(env["proj"])
 
@@ -1451,16 +1569,21 @@ def test_unapply_global_with_skill_filter(env):
 
 def test_unapply_interactive_destination_prompt_global(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(Path, "home", lambda: env["home"])
     monkeypatch.setattr(presets_mod.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(presets_mod, "load_config", lambda: {
-        "default_preset": "default",
-        "apply_targets": [".agents/skills"],
-        "apply_mode": "symlink",
-        "prompts": {"ask_apply": True, "picker": "none"},
-        "custom_agents": {},
-    })
+    monkeypatch.setattr(
+        presets_mod,
+        "load_config",
+        lambda: {
+            "default_preset": "default",
+            "apply_targets": [".agents/skills"],
+            "apply_mode": "symlink",
+            "prompts": {"ask_apply": True, "picker": "none"},
+            "custom_agents": {},
+        },
+    )
 
     # Apply to global first
     presets_mod.apply(preset="mypreset", global_apply=True, yes=True)
@@ -1476,6 +1599,7 @@ def test_unapply_interactive_destination_prompt_global(env, monkeypatch):
 
 def test_presets_browse_enter_opens_search(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod, "browse_presets", lambda dirs: (None, ["mypreset"]))
 
@@ -1485,6 +1609,7 @@ def test_presets_browse_enter_opens_search(env, monkeypatch):
         search_called.update(kwargs)
 
     import skill_ctl.search
+
     monkeypatch.setattr(skill_ctl.search, "search", fake_search)
 
     presets_mod.presets(action="browse")
@@ -1493,6 +1618,7 @@ def test_presets_browse_enter_opens_search(env, monkeypatch):
 
 def test_presets_browse_enter_multiple_opens_search(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(presets_mod, "browse_presets", lambda dirs: (None, ["mypreset", "otherp"]))
 
@@ -1502,6 +1628,7 @@ def test_presets_browse_enter_multiple_opens_search(env, monkeypatch):
         search_called.update(kwargs)
 
     import skill_ctl.search
+
     monkeypatch.setattr(skill_ctl.search, "search", fake_search)
 
     presets_mod.presets(action="browse")
@@ -1510,6 +1637,7 @@ def test_presets_browse_enter_multiple_opens_search(env, monkeypatch):
 
 def test_update_all_concurrency(env, monkeypatch):
     from skill_ctl import skills as skills_mod
+
     monkeypatch.setattr(skills_mod, "PRESETS_DIR", env["presets"])
 
     (env["presets"] / "mypreset" / "skills-lock.json").write_text("{}", encoding="utf-8")
@@ -1529,6 +1657,3 @@ def test_update_all_concurrency(env, monkeypatch):
     assert len(calls) == 2
     cwds = {c[1] for c in calls}
     assert cwds == {str(env["presets"] / "mypreset"), str(env["presets"] / "otherp")}
-
-
-

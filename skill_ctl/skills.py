@@ -26,51 +26,53 @@ from skill_ctl.ui import console, print_error, print_header, print_success, prin
 def add(
     package: Annotated[
         Optional[str],
-        typer.Argument(help="Package name or GitHub repo from skills.sh (e.g. owner/repo). Omit to search skills.sh interactively.")
+        typer.Argument(
+            help="Package name or GitHub repo from skills.sh (e.g. owner/repo). Omit to search skills.sh interactively."
+        ),
     ] = None,
     preset: Annotated[
         Optional[str],
-        typer.Option("--preset", "-P", help="Preset to install into (~/.skill-ctl/presets/<name>/).")
+        typer.Option(
+            "--preset", "-P", help="Preset to install into (~/.skill-ctl/presets/<name>/)."
+        ),
     ] = None,
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Project path to install directly into (default: current directory).")
+        typer.Option(
+            "--project",
+            "-p",
+            help="Project path to install directly into (default: current directory).",
+        ),
     ] = None,
     global_install: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Install globally instead of project-level.")
+        bool, typer.Option("--global", "-g", help="Install globally instead of project-level.")
     ] = False,
     skill: Annotated[
-        Optional[str],
-        typer.Option("--skill", "-s", help="Specific skill name to install.")
+        Optional[str], typer.Option("--skill", "-s", help="Specific skill name to install.")
     ] = None,
     agent: Annotated[
         Optional[str],
-        typer.Option("--agent", "-a", help="Target agent (e.g. universal, claude-code, cursor, or '*' for all).")
+        typer.Option(
+            "--agent",
+            "-a",
+            help="Target agent (e.g. universal, claude-code, cursor, or '*' for all).",
+        ),
     ] = None,
-    yes: Annotated[
-        bool,
-        typer.Option("--yes", "-y", help="Skip confirmation prompts.")
-    ] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompts.")] = False,
     copy: Annotated[
-        bool,
-        typer.Option("--copy", "-c", help="Copy files instead of symlinking.")
+        bool, typer.Option("--copy", "-c", help="Copy files instead of symlinking.")
     ] = False,
     force: Annotated[
-        bool,
-        typer.Option("--force", "-f", help="Force overwrite existing skill directories.")
+        bool, typer.Option("--force", "-f", help="Force overwrite existing skill directories.")
     ] = False,
     all_skills: Annotated[
-        bool,
-        typer.Option("--all", help="Shorthand for --skill '*' --agent '*' -y.")
+        bool, typer.Option("--all", help="Shorthand for --skill '*' --agent '*' -y.")
     ] = False,
     full_depth: Annotated[
-        bool,
-        typer.Option("--full-depth", help="Search all subdirectories for SKILL.md.")
+        bool, typer.Option("--full-depth", help="Search all subdirectories for SKILL.md.")
     ] = False,
     json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output machine-readable JSON.")
+        bool, typer.Option("--json", help="Output machine-readable JSON.")
     ] = False,
 ) -> None:
     """Add a skill package from skills.sh (or Git repo). Can target a preset, project, or global."""
@@ -107,11 +109,17 @@ def add(
 
     if package is None:
         from skill_ctl.search import search
+
         search(preset=preset, project=project, global_only=global_install, remote_only=True)
         return
 
     if agent and agent not in ("*", "all"):
-        if "/" in agent or "\\" in agent or ".." in agent or not re.match(r"^[a-zA-Z0-9_.-]+$", agent):
+        if (
+            "/" in agent
+            or "\\" in agent
+            or ".." in agent
+            or not re.match(r"^[a-zA-Z0-9_.-]+$", agent)
+        ):
             print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
             sys.exit(1)
 
@@ -121,10 +129,13 @@ def add(
 
     if not skill and not all_skills and "@" not in package and sys.stdin.isatty() and not yes:
         from skill_ctl.catalog import choose_repo_skills, fetch_repo_skills
+
         try:
             repo_skills = fetch_repo_skills(package)
             if len(repo_skills) == 1:
-                console.print(f"[dim]Found 1 skill in {package}: [bold]{repo_skills[0]}[/bold][/dim]")
+                console.print(
+                    f"[dim]Found 1 skill in {package}: [bold]{repo_skills[0]}[/bold][/dim]"
+                )
                 resolved_skills = [repo_skills[0]]
             elif len(repo_skills) > 1:
                 picked = choose_repo_skills(package, repo_skills)
@@ -151,7 +162,9 @@ def add(
                 detected_project_agents.append("cursor")
             if (target_path / ".codex").is_dir():
                 detected_project_agents.append("codex")
-            if (target_path / ".windsurf").is_dir() or (target_path / ".codeium" / "windsurf").is_dir():
+            if (target_path / ".windsurf").is_dir() or (
+                target_path / ".codeium" / "windsurf"
+            ).is_dir():
                 detected_project_agents.append("windsurf")
             if (target_path / ".hermes").is_dir():
                 detected_project_agents.append("hermes")
@@ -168,7 +181,9 @@ def add(
         npx_args.extend(["--agent", a])
 
     # If both skills and agents were pre-resolved, drive npx skills headlessly (-y)
-    drive_headless = (bool(resolved_skills) or all_skills or "@" in package) and bool(resolved_agents)
+    drive_headless = (bool(resolved_skills) or all_skills or "@" in package) and bool(
+        resolved_agents
+    )
 
     # Pass -y if requested or if driving headlessly
     if yes or drive_headless:
@@ -209,6 +224,7 @@ def add(
     if code != 0:
         sys.exit(code)
 
+
 from skill_ctl.scanner import (  # noqa: F401
     AGENT_NAME_EXPANSIONS,
     _display_path,
@@ -219,28 +235,28 @@ from skill_ctl.scanner import (  # noqa: F401
 
 def list_skills(
     preset: Annotated[
-        Optional[str],
-        typer.Option("--preset", "-P", help="Preset to inspect skills for.")
+        Optional[str], typer.Option("--preset", "-P", help="Preset to inspect skills for.")
     ] = None,
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Inspect skills for a specific project directory (default: current directory).")
+        typer.Option(
+            "--project",
+            "-p",
+            help="Inspect skills for a specific project directory (default: current directory).",
+        ),
     ] = None,
     global_list: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="List global skills.")
+        bool, typer.Option("--global", "-g", help="List global skills.")
     ] = False,
     agent: Annotated[
         Optional[str],
-        typer.Option("--agent", "-a", help="Filter by agent (e.g. universal, claude-code, cursor).")
+        typer.Option(
+            "--agent", "-a", help="Filter by agent (e.g. universal, claude-code, cursor)."
+        ),
     ] = None,
-    json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output as JSON.")
-    ] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
     npx: Annotated[
-        bool,
-        typer.Option("--npx", help="Use npx skills' original list implementation.")
+        bool, typer.Option("--npx", help="Use npx skills' original list implementation.")
     ] = False,
 ) -> None:
     """List installed skills in current project, a preset, or global."""
@@ -271,11 +287,16 @@ def list_skills(
 
     import json
     import warnings
+
     if shutil.which("npx") is None:
         warnings.warn("'npx' not found on PATH. Install Node.js and retry.", RuntimeWarning)
         sys.exit(1)
 
-    target_root = Path.home() if global_list else (Path(project).expanduser().resolve() if project else Path.cwd())
+    target_root = (
+        Path.home()
+        if global_list
+        else (Path(project).expanduser().resolve() if project else Path.cwd())
+    )
     is_global = global_list or (target_root == Path.home())
 
     skills_list = scan_installed_skills(target_root, is_global=is_global, agent_filter=agent)
@@ -287,7 +308,9 @@ def list_skills(
     title = "Global Skills" if is_global else "Project Skills"
     console.print(f"[header]{title}[/header]\n")
     if not skills_list:
-        console.print(f"  [dim]No skills installed {'globally' if is_global else 'in current project'}.[/dim]")
+        console.print(
+            f"  [dim]No skills installed {'globally' if is_global else 'in current project'}.[/dim]"
+        )
         return
 
     for item in skills_list:
@@ -297,32 +320,41 @@ def list_skills(
         console.print(f"[choice]{item['name']:<24}[/choice] [path]{display_path}[/path]")
         console.print(f"  [dim]Agents:[/dim] {agents_str}  [dim]Source:[/dim] {src_str}")
 
+
 def remove(
     skill: Annotated[Optional[str], typer.Argument()] = None,
     preset: Annotated[
-        Optional[str],
-        typer.Option("--preset", "-P", help="Remove skill from this preset.")
+        Optional[str], typer.Option("--preset", "-P", help="Remove skill from this preset.")
     ] = None,
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Remove from a specific project directory (default: current directory).")
+        typer.Option(
+            "--project",
+            "-p",
+            help="Remove from a specific project directory (default: current directory).",
+        ),
     ] = None,
     global_rm: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Remove skill from global scope.")
+        bool, typer.Option("--global", "-g", help="Remove skill from global scope.")
     ] = False,
     agent: Annotated[
         Optional[str],
-        typer.Option("--agent", "-a", help="Remove from specific agent only (e.g. universal, claude-code, cursor).")
+        typer.Option(
+            "--agent",
+            "-a",
+            help="Remove from specific agent only (e.g. universal, claude-code, cursor).",
+        ),
     ] = None,
-    yes: Annotated[
-        bool,
-        typer.Option("--yes", "-y", help="Skip confirmation prompt.")
-    ] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Remove an installed skill. Omit the name to pick interactively."""
     if agent and agent not in ("*", "all"):
-        if "/" in agent or "\\" in agent or ".." in agent or not re.match(r"^[a-zA-Z0-9_.-]+$", agent):
+        if (
+            "/" in agent
+            or "\\" in agent
+            or ".." in agent
+            or not re.match(r"^[a-zA-Z0-9_.-]+$", agent)
+        ):
             print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
             sys.exit(1)
     config = load_config()
@@ -355,7 +387,8 @@ def remove(
             try:
                 confirmed = Confirm.ask(
                     f"Remove {len(names)} skill{'s' if len(names) != 1 else ''} from '{preset}'?",
-                    default=False, console=console,
+                    default=False,
+                    console=console,
                 )
             except (EOFError, KeyboardInterrupt):
                 console.print()
@@ -392,27 +425,24 @@ def remove(
     if code != 0:
         sys.exit(code)
 
+
 def update(
     skill: Annotated[Optional[str], typer.Argument()] = None,
     preset: Annotated[
-        Optional[str],
-        typer.Option("--preset", "-P", help="Update skills inside this preset.")
+        Optional[str], typer.Option("--preset", "-P", help="Update skills inside this preset.")
     ] = None,
     global_update: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Update global skills.")
+        bool, typer.Option("--global", "-g", help="Update global skills.")
     ] = False,
     all_presets: Annotated[
-        bool,
-        typer.Option("--all", help="Update every preset with a skills-lock.json.")
+        bool, typer.Option("--all", help="Update every preset with a skills-lock.json.")
     ] = False,
-    yes: Annotated[
-        bool,
-        typer.Option("--yes", "-y", help="Skip prompt.")
-    ] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip prompt.")] = False,
     concurrency: Annotated[
         int,
-        typer.Option("--concurrency", "-j", help="Number of presets to update concurrently with --all.")
+        typer.Option(
+            "--concurrency", "-j", help="Number of presets to update concurrently with --all."
+        ),
     ] = 4,
 ) -> None:
     """Update skills to latest versions via npx skills update."""
@@ -427,10 +457,14 @@ def update(
         sys.exit(1)
 
     if all_presets:
-        preset_dirs = sorted(
-            (path for path in PRESETS_DIR.iterdir() if path.is_dir()),
-            key=lambda path: path.name,
-        ) if PRESETS_DIR.exists() else []
+        preset_dirs = (
+            sorted(
+                (path for path in PRESETS_DIR.iterdir() if path.is_dir()),
+                key=lambda path: path.name,
+            )
+            if PRESETS_DIR.exists()
+            else []
+        )
         updateable = [path for path in preset_dirs if (path / "skills-lock.json").exists()]
 
         for path in preset_dirs:
@@ -467,7 +501,9 @@ def update(
         if len(failed) != len(updateable):
             maybe_auto_push("update all presets")
         if failed:
-            print_error(f"Could not update preset{'s' if len(failed) != 1 else ''}: {', '.join(failed)}.")
+            print_error(
+                f"Could not update preset{'s' if len(failed) != 1 else ''}: {', '.join(failed)}."
+            )
             sys.exit(1)
         return
 
@@ -499,25 +535,23 @@ def update(
 
 
 def info(
-    skill: Annotated[
-        str,
-        typer.Argument(help="Name of the skill to inspect.")
-    ],
+    skill: Annotated[str, typer.Argument(help="Name of the skill to inspect.")],
     preset: Annotated[
-        Optional[str],
-        typer.Option("--preset", "-P", help="Inspect skill in a specific preset.")
+        Optional[str], typer.Option("--preset", "-P", help="Inspect skill in a specific preset.")
     ] = None,
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Inspect skill for a specific project directory (default: current directory).")
+        typer.Option(
+            "--project",
+            "-p",
+            help="Inspect skill for a specific project directory (default: current directory).",
+        ),
     ] = None,
     global_scope: Annotated[
-        bool,
-        typer.Option("--global", "-g", help="Inspect global installation.")
+        bool, typer.Option("--global", "-g", help="Inspect global installation.")
     ] = False,
     json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output machine-readable JSON.")
+        bool, typer.Option("--json", help="Output machine-readable JSON.")
     ] = False,
 ) -> None:
     """Show details, description, and installation status of a skill."""
@@ -564,7 +598,9 @@ def info(
                 "path": str(p_path),
                 "is_symlink": is_sym,
                 "target": target_sym,
-                "agents": sorted(match["agents"]) if isinstance(match["agents"], (set, list)) else match["agents"],
+                "agents": sorted(match["agents"])
+                if isinstance(match["agents"], (set, list))
+                else match["agents"],
                 "source": match.get("source"),
             }
 
@@ -581,7 +617,9 @@ def info(
                 "path": str(g_path),
                 "is_symlink": is_sym,
                 "target": target_sym,
-                "agents": sorted(match["agents"]) if isinstance(match["agents"], (set, list)) else match["agents"],
+                "agents": sorted(match["agents"])
+                if isinstance(match["agents"], (set, list))
+                else match["agents"],
                 "source": match.get("source"),
             }
 
@@ -710,4 +748,3 @@ def info(
         console.print(f"    • Link:   [path]{loc_str}[/path]")
     else:
         console.print("  [dim]Global:[/dim]   [dim](not installed globally)[/dim]")
-

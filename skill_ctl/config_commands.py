@@ -44,7 +44,9 @@ def get_editor_command(path: Path) -> list[str]:
     return [candidates[0], str(path)]
 
 
-def config_cmd(action: Annotated[Literal["show", "path", "edit", "reset"], typer.Argument()] = "show") -> None:
+def config_cmd(
+    action: Annotated[Literal["show", "path", "edit", "reset"], typer.Argument()] = "show",
+) -> None:
     """Manage skill-ctl configuration."""
     path = ensure_config()
     if action == "path":
@@ -71,14 +73,19 @@ def set_theme_in_config(name: str) -> None:
     path = ensure_config()
     text = path.read_text(encoding="utf-8")
     updated, count = re.subn(r"(?m)^theme:.*$", f"theme: {name}", text)
-    path.write_text(updated if count else text.rstrip("\n") + f"\ntheme: {name}\n", encoding="utf-8")
+    path.write_text(
+        updated if count else text.rstrip("\n") + f"\ntheme: {name}\n", encoding="utf-8"
+    )
     invalidate_config_cache()
 
 
-
 def theme_cmd(
-    name: Annotated[Optional[str], typer.Argument(help="Theme name, 'list', or omit to pick interactively")] = None,
-    list_all: Annotated[bool, typer.Option("--list", "-l", help="List all available themes with color previews")] = False,
+    name: Annotated[
+        Optional[str], typer.Argument(help="Theme name, 'list', or omit to pick interactively")
+    ] = None,
+    list_all: Annotated[
+        bool, typer.Option("--list", "-l", help="List all available themes with color previews")
+    ] = False,
 ) -> None:
     """View or change the color theme. Omit the name to pick interactively."""
     current = load_config().get("theme", "default")

@@ -43,7 +43,10 @@ def env(tmp_path):
 def skctl(env, *args):
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
-        cwd=env["proj"], env=env["env"], capture_output=True, text=True,
+        cwd=env["proj"],
+        env=env["env"],
+        capture_output=True,
+        text=True,
     )
 
 
@@ -183,7 +186,6 @@ def test_search_marks_what_is_applied_here(env):
     assert only == ["drawio"]
 
 
-
 def test_name_matches_rank_above_description_matches(env):
     """Substring matching is blunt, so the one you probably meant has to come first."""
     poster = env["presets"] / "diagrams" / ".agents" / "skills" / "poster"
@@ -235,7 +237,8 @@ def test_fzf_is_given_previewable_lines(env, monkeypatch):
 
     monkeypatch.setattr(picker_mod.subprocess, "run", fake_run)
     monkeypatch.setattr(
-        picker_mod.shutil, "which",
+        picker_mod.shutil,
+        "which",
         lambda name: "/usr/bin/fzf" if name == "fzf" else None,
     )
     monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
@@ -246,10 +249,11 @@ def test_fzf_is_given_previewable_lines(env, monkeypatch):
     search_mod.search(project=str(env["proj"]))
 
     from skill_ctl.theme import picker_ansi
+
     colors = picker_ansi("default")
 
     assert "--preview" in seen["cmd"]
-    assert seen["cmd"][seen["cmd"].index("--preview") + 1] == 'cat {5}/SKILL.md'
+    assert seen["cmd"][seen["cmd"].index("--preview") + 1] == "cat {5}/SKILL.md"
     assert "--multi" in seen["cmd"], "Tab-selecting several is the point"
     for line in seen["input"].splitlines():
         fields = line.split("\t")
@@ -277,7 +281,8 @@ def test_preview_uses_the_best_installed_renderer(monkeypatch, installed, expect
     from skill_ctl import picker as picker_mod
 
     monkeypatch.setattr(
-        picker_mod.shutil, "which",
+        picker_mod.shutil,
+        "which",
         lambda name: f"/usr/bin/{name}" if name in installed else None,
     )
 
@@ -295,12 +300,12 @@ def test_preview_uses_windows_shell_syntax(monkeypatch):
 
     monkeypatch.setattr(picker_mod, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(picker_mod.shutil, "which", lambda name: None)
-    assert picker_mod.preview_command() == r'type {5}\SKILL.md'
+    assert picker_mod.preview_command() == r"type {5}\SKILL.md"
 
     monkeypatch.setattr(picker_mod.shutil, "which", lambda name: name if name == "bat" else None)
     command = picker_mod.preview_command()
     assert '--terminal-width="%FZF_PREVIEW_COLUMNS%"' in command
-    assert command.endswith(r'{5}\SKILL.md')
+    assert command.endswith(r"{5}\SKILL.md")
 
 
 def test_fuzzy_matches_the_name_like_fzf(env):
@@ -326,7 +331,8 @@ def test_pick_applies_what_was_chosen(env, tmp_path):
         [sys.executable, "-m", "skill_ctl.cli", "search", "--pick"],
         cwd=env["proj"],
         env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"),
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert (env["proj"] / ".agents" / "skills" / "drawio").is_symlink()
@@ -342,7 +348,8 @@ def test_pick_spanning_two_presets_applies_each(env, tmp_path):
         [sys.executable, "-m", "skill_ctl.cli", "search", "--pick"],
         cwd=env["proj"],
         env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"),
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     record = json.loads((env["proj"] / "skills-applied.json").read_text())["presets"]
@@ -356,7 +363,8 @@ def test_cancelling_the_picker_changes_nothing(env, tmp_path):
         [sys.executable, "-m", "skill_ctl.cli", "search", "--pick"],
         cwd=env["proj"],
         env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"),
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert res.returncode == 0, res.stderr
     assert "Nothing picked" in flat(res)
@@ -392,6 +400,7 @@ def test_skill_meta_mtime_cache(tmp_path, monkeypatch):
     import time
 
     from skill_ctl import picker as picker_mod
+
     cache_file = tmp_path / ".metadata_cache.json"
     monkeypatch.setattr(picker_mod, "METADATA_CACHE_FILE", cache_file)
     monkeypatch.setattr(picker_mod, "BASE_DIR", tmp_path)
@@ -419,8 +428,15 @@ def test_skill_meta_mtime_cache(tmp_path, monkeypatch):
 
 def test_parse_github_repo_helper():
     from skill_ctl.catalog import parse_github_repo
-    assert parse_github_repo("https://github.com/affaan-m/ECC/tree/main/skills/react-patterns") == "affaan-m/ECC"
-    assert parse_github_repo("https://github.com/vercel-labs/agent-skills.git") == "vercel-labs/agent-skills"
+
+    assert (
+        parse_github_repo("https://github.com/affaan-m/ECC/tree/main/skills/react-patterns")
+        == "affaan-m/ECC"
+    )
+    assert (
+        parse_github_repo("https://github.com/vercel-labs/agent-skills.git")
+        == "vercel-labs/agent-skills"
+    )
     assert parse_github_repo("git@github.com:anthropics/skills.git") == "anthropics/skills"
     assert parse_github_repo("owner/repo") == "owner/repo"
     assert parse_github_repo(None) is None
@@ -433,8 +449,18 @@ def test_multi_remote_search_merges_and_deduplicates(monkeypatch):
         if "skills.sh" in url:
             return {
                 "skills": [
-                    {"name": "react-patterns", "source": "affaan-m/ECC", "installs": 1500, "id": "affaan-m/ECC/react-patterns"},
-                    {"name": "vercel-optimize", "source": "vercel-labs/agent-skills", "installs": 5000, "id": "vercel-labs/agent-skills/vercel-optimize"},
+                    {
+                        "name": "react-patterns",
+                        "source": "affaan-m/ECC",
+                        "installs": 1500,
+                        "id": "affaan-m/ECC/react-patterns",
+                    },
+                    {
+                        "name": "vercel-optimize",
+                        "source": "vercel-labs/agent-skills",
+                        "installs": 5000,
+                        "id": "vercel-labs/agent-skills/vercel-optimize",
+                    },
                 ]
             }
         elif "skillsmp.com" in url:
@@ -459,7 +485,7 @@ def test_multi_remote_search_merges_and_deduplicates(monkeypatch):
                             "id": "skillsmp-setup-ts",
                         },
                     ]
-                }
+                },
             }
         return {}
 
@@ -482,6 +508,7 @@ def test_remote_filter_skillsmp_only(monkeypatch):
     from skill_ctl import catalog
 
     calls = []
+
     def mock_get_json(url, timeout=10):
         calls.append(url)
         if "skillsmp.com" in url:
@@ -489,9 +516,15 @@ def test_remote_filter_skillsmp_only(monkeypatch):
                 "success": True,
                 "data": {
                     "skills": [
-                        {"name": "skillsmp-only", "author": "auth", "githubUrl": "https://github.com/auth/repo", "stars": 50, "id": "1"}
+                        {
+                            "name": "skillsmp-only",
+                            "author": "auth",
+                            "githubUrl": "https://github.com/auth/repo",
+                            "stars": 50,
+                            "id": "1",
+                        }
                     ]
-                }
+                },
             }
         return {"skills": []}
 
@@ -508,12 +541,29 @@ def test_remote_disabled_by_default_but_overridden_by_flag(monkeypatch):
     from skill_ctl import catalog
 
     calls = []
+
     def mock_get_json(url, timeout=10):
         calls.append(url)
         if "skillsmp.com" in url:
-            return {"data": {"skills": [{"name": "skillsmp-skill", "author": "auth", "githubUrl": "https://github.com/auth/repo", "stars": 10, "id": "2"}]}}
+            return {
+                "data": {
+                    "skills": [
+                        {
+                            "name": "skillsmp-skill",
+                            "author": "auth",
+                            "githubUrl": "https://github.com/auth/repo",
+                            "stars": 10,
+                            "id": "2",
+                        }
+                    ]
+                }
+            }
         elif "skills.sh" in url:
-            return {"skills": [{"name": "skillssh-skill", "source": "auth/repo", "installs": 10, "id": "1"}]}
+            return {
+                "skills": [
+                    {"name": "skillssh-skill", "source": "auth/repo", "installs": 10, "id": "1"}
+                ]
+            }
         return {}
 
     monkeypatch.setattr(catalog, "get_json", mock_get_json)
@@ -545,8 +595,18 @@ def test_cli_search_remote_preprocess():
     assert preprocess_args(["search", "--remote"]) == ["search", "--remote", "default"]
     assert preprocess_args(["search", "-r"]) == ["search", "-r", "default"]
     assert preprocess_args(["search", "--remote", "skillsmp"]) == ["search", "--remote", "skillsmp"]
-    assert preprocess_args(["search", "react", "--remote", "skills.sh"]) == ["search", "react", "--remote", "skills.sh"]
-    assert preprocess_args(["search", "react", "--remote", "all"]) == ["search", "react", "--remote", "all"]
+    assert preprocess_args(["search", "react", "--remote", "skills.sh"]) == [
+        "search",
+        "react",
+        "--remote",
+        "skills.sh",
+    ]
+    assert preprocess_args(["search", "react", "--remote", "all"]) == [
+        "search",
+        "react",
+        "--remote",
+        "all",
+    ]
 
 
 def test_format_relative_time():
@@ -578,6 +638,7 @@ def test_format_relative_time():
 
 def test_catalog_format_row_includes_updated():
     from skill_ctl.catalog import format_row
+
     skill = {
         "name": "test-skill",
         "source": "owner/repo",
@@ -608,7 +669,9 @@ def test_details_fetches_and_formats_updated_time(monkeypatch):
     monkeypatch.setattr(catalog, "get_json", mock_get_json)
     monkeypatch.setattr(catalog, "frontmatter", lambda source, name: {"description": "test"})
 
-    info = catalog.details({"name": "test-skill", "source": "owner/repo", "remote": "skills.sh", "installs": 100})
+    info = catalog.details(
+        {"name": "test-skill", "source": "owner/repo", "remote": "skills.sh", "installs": 100}
+    )
     assert info["stars"] == 1234
     assert info["updated_at"] == "2026-08-20T12:00:00Z"
     assert "2026-08-20" in info["updated"]
@@ -619,6 +682,7 @@ def test_details_fetches_and_formats_updated_time(monkeypatch):
 
 def test_skill_meta_extracts_frontmatter_date(tmp_path):
     from skill_ctl.picker import parse_skill_meta, skill_meta
+
     skill_dir = tmp_path / "dated-skill"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
@@ -646,6 +710,7 @@ def test_search_remote_install_triggers_maybe_auto_push(monkeypatch, tmp_path):
     import sys
 
     from skill_ctl import search as search_mod
+
     pushed = []
     monkeypatch.setattr(search_mod, "maybe_auto_push", lambda msg: pushed.append(msg))
     monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: 0)
@@ -667,8 +732,20 @@ def test_picker_fzf_actions(monkeypatch):
     from skill_ctl import picker as picker_mod
 
     rows = [
-        {"skill": "s1", "location": "p1", "updated": "now", "description": "d1", "path": "/path/to/s1"},
-        {"skill": "s2", "location": "p2", "updated": "now", "description": "d2", "path": "/path/to/s2"},
+        {
+            "skill": "s1",
+            "location": "p1",
+            "updated": "now",
+            "description": "d1",
+            "path": "/path/to/s1",
+        },
+        {
+            "skill": "s2",
+            "location": "p2",
+            "updated": "now",
+            "description": "d2",
+            "path": "/path/to/s2",
+        },
     ]
 
     monkeypatch.setattr(picker_mod.shutil, "which", lambda name: "/usr/bin/fzf")
@@ -832,7 +909,9 @@ def test_search_remote_alt_p_prompts_and_installs_preset(monkeypatch, tmp_path):
     pushed = []
     npx_calls = []
     monkeypatch.setattr(search_mod, "maybe_auto_push", lambda msg: pushed.append(msg))
-    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(
+        search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(
         "skill_ctl.catalog.choose",
@@ -841,7 +920,9 @@ def test_search_remote_alt_p_prompts_and_installs_preset(monkeypatch, tmp_path):
         ],
     )
     monkeypatch.setattr("skill_ctl.catalog.inspect", lambda skills: True)
-    monkeypatch.setattr("skill_ctl.prompts.prompt_preset_or_new", lambda *args, **kwargs: "chosen-preset")
+    monkeypatch.setattr(
+        "skill_ctl.prompts.prompt_preset_or_new", lambda *args, **kwargs: "chosen-preset"
+    )
 
     presets_dir = tmp_path / "presets"
     monkeypatch.setattr(search_mod, "PRESETS_DIR", presets_dir)
@@ -863,7 +944,9 @@ def test_search_remote_alt_g_installs_globally(monkeypatch):
     from skill_ctl import search as search_mod
 
     npx_calls = []
-    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(
+        search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(Confirm, "ask", lambda *args, **kwargs: True)
     monkeypatch.setattr(
@@ -888,7 +971,9 @@ def test_search_remote_alt_g_cancelled(monkeypatch):
     from skill_ctl import search as search_mod
 
     npx_calls = []
-    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(
+        search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(Confirm, "ask", lambda *args, **kwargs: False)
     monkeypatch.setattr(
@@ -923,7 +1008,6 @@ def test_add_installed_to_global_confirmation_and_cancel(env, monkeypatch):
     assert added >= 1
 
 
-
 def test_search_local_alt_p_installs_into_preset(env, monkeypatch):
     from skill_ctl import search as search_mod
 
@@ -945,8 +1029,13 @@ def test_search_local_alt_p_installs_into_preset(env, monkeypatch):
         "_action": "alt-p",
     }
 
-    monkeypatch.setattr("skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True))
-    monkeypatch.setattr("skill_ctl.prompts.prompt_preset_or_new", lambda names, default_p, presets_dir: "target-preset")
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
+    )
+    monkeypatch.setattr(
+        "skill_ctl.prompts.prompt_preset_or_new",
+        lambda names, default_p, presets_dir: "target-preset",
+    )
 
     search_mod.search(project=str(env["proj"]))
 
@@ -961,7 +1050,9 @@ def test_search_local_alt_g_adds_globally(env, monkeypatch):
     from skill_ctl import search as search_mod
 
     global_added = []
-    monkeypatch.setattr("skill_ctl.search.add_installed_to_global", lambda cfg, skill: global_added.append(skill))
+    monkeypatch.setattr(
+        "skill_ctl.search.add_installed_to_global", lambda cfg, skill: global_added.append(skill)
+    )
     monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
@@ -976,7 +1067,9 @@ def test_search_local_alt_g_adds_globally(env, monkeypatch):
         "_action": "alt-g",
     }
 
-    monkeypatch.setattr("skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True))
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
+    )
 
     search_mod.search(project=str(env["proj"]))
 
@@ -1007,7 +1100,9 @@ def test_search_local_alt_x_deletes_skill(env, monkeypatch):
         "_action": "alt-x",
     }
 
-    monkeypatch.setattr("skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True))
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
+    )
 
     search_mod.search(project=str(env["proj"]))
 
@@ -1019,8 +1114,13 @@ def test_search_local_alt_a_prompts_destination_and_applies_project(env, monkeyp
     from skill_ctl import search as search_mod
 
     applied = []
-    monkeypatch.setattr("skill_ctl.search.apply_picked", lambda chosen, project=None: applied.append((chosen, project)))
-    monkeypatch.setattr("skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: (None, True, False))
+    monkeypatch.setattr(
+        "skill_ctl.search.apply_picked",
+        lambda chosen, project=None: applied.append((chosen, project)),
+    )
+    monkeypatch.setattr(
+        "skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: (None, True, False)
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     chosen_skill = {
@@ -1033,7 +1133,9 @@ def test_search_local_alt_a_prompts_destination_and_applies_project(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
-    monkeypatch.setattr("skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True))
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
+    )
 
     search_mod.search(project=str(env["proj"]))
 
@@ -1050,7 +1152,10 @@ def test_search_local_alt_a_prompts_destination_and_installs_preset(env, monkeyp
     monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
     monkeypatch.setattr("skill_ctl.constants.PRESETS_DIR", env["presets"])
-    monkeypatch.setattr("skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: ("target-preset", False, False))
+    monkeypatch.setattr(
+        "skill_ctl.prompts.prompt_destination",
+        lambda *args, **kwargs: ("target-preset", False, False),
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     chosen_skill = {
@@ -1063,7 +1168,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_preset(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
-    monkeypatch.setattr("skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True))
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
+    )
 
     search_mod.search(project=str(env["proj"]))
 
@@ -1077,8 +1184,12 @@ def test_search_local_alt_a_prompts_destination_and_installs_global(env, monkeyp
     from skill_ctl import search as search_mod
 
     global_added = []
-    monkeypatch.setattr("skill_ctl.search.add_installed_to_global", lambda cfg, skill: global_added.append(skill))
-    monkeypatch.setattr("skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: (None, False, True))
+    monkeypatch.setattr(
+        "skill_ctl.search.add_installed_to_global", lambda cfg, skill: global_added.append(skill)
+    )
+    monkeypatch.setattr(
+        "skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: (None, False, True)
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     chosen_skill = {
@@ -1091,7 +1202,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_global(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
-    monkeypatch.setattr("skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True))
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
+    )
 
     search_mod.search(project=str(env["proj"]))
 
@@ -1103,16 +1216,25 @@ def test_search_remote_alt_a_prompts_destination_and_installs_preset(monkeypatch
     from skill_ctl import search as search_mod
 
     npx_calls = []
-    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(
+        search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(
         "skill_ctl.catalog.choose",
         lambda query="", owner=None, remotes=None, **kwargs: [
-            {"source": "owner/repo", "name": "all skills", "_all_from_source": True, "_action": "alt-a"},
+            {
+                "source": "owner/repo",
+                "name": "all skills",
+                "_all_from_source": True,
+                "_action": "alt-a",
+            },
         ],
     )
     monkeypatch.setattr("skill_ctl.catalog.inspect", lambda skills: True)
-    monkeypatch.setattr("skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: ("my-preset", False, False))
+    monkeypatch.setattr(
+        "skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: ("my-preset", False, False)
+    )
 
     presets_dir = tmp_path / "presets"
     monkeypatch.setattr(search_mod, "PRESETS_DIR", presets_dir)
@@ -1200,10 +1322,3 @@ def test_search_cli_limit_option(monkeypatch):
 
     search_mod.search(query="presenter", remote="skills.sh", limit=99, json_output=True)
     assert called_kwargs.get("limit") == 99
-
-
-
-
-
-
-

@@ -24,7 +24,9 @@ def links_into_preset(path: Path, preset_dir: Path) -> bool:
         return False
     target = Path(os.path.normpath(os.path.join(path.parent, _clean_path_str(os.readlink(path)))))
     bases = {preset_dir, preset_dir.resolve()}
-    return any(_is_subpath_of(target, base)[0] or _is_subpath_of(path.resolve(), base)[0] for base in bases)
+    return any(
+        _is_subpath_of(target, base)[0] or _is_subpath_of(path.resolve(), base)[0] for base in bases
+    )
 
 
 def _is_subpath_of(child: Path, parent: Path) -> tuple[bool, Path]:
@@ -39,7 +41,7 @@ def _is_subpath_of(child: Path, parent: Path) -> tuple[bool, Path]:
         if c_str == p_str.rstrip(os.sep):
             return True, Path()
         if c_str.startswith(p_str):
-            rel = os.path.abspath(_clean_path_str(child))[len(p_str):]
+            rel = os.path.abspath(_clean_path_str(child))[len(p_str) :]
             return True, Path(rel)
     except Exception:
         pass
@@ -73,11 +75,20 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
                 new_target = new_base / rel_to_old
                 is_int, rel_link = _is_subpath_of(link, old_base)
                 moved_link = new_base / rel_link if is_int else link
-                replacement = str(new_target) if os.path.isabs(original) else os.path.relpath(new_target, moved_link.parent)
+                replacement = (
+                    str(new_target)
+                    if os.path.isabs(original)
+                    else os.path.relpath(new_target, moved_link.parent)
+                )
                 temporary_parent = old_dir.parent if is_int else link.parent
-                temporary = Path(cleanup.enter_context(tempfile.TemporaryDirectory(
-                    prefix=".skctl-rename-", dir=temporary_parent,
-                )))
+                temporary = Path(
+                    cleanup.enter_context(
+                        tempfile.TemporaryDirectory(
+                            prefix=".skctl-rename-",
+                            dir=temporary_parent,
+                        )
+                    )
+                )
                 updated = temporary / "updated"
                 backup = temporary / "original"
                 updated.symlink_to(replacement, target_is_directory=link.is_dir())
@@ -132,7 +143,9 @@ def prune_empty_dirs(path: Path, stop: Path) -> Optional[Path]:
     return removed
 
 
-def skill_kinds(project: Path, rel_dirs: list[str], names: Iterable[str]) -> dict[tuple[str, str], str]:
+def skill_kinds(
+    project: Path, rel_dirs: list[str], names: Iterable[str]
+) -> dict[tuple[str, str], str]:
     """Classify existing skill paths as links or real files."""
     kinds = {}
     for rel_dir in rel_dirs:

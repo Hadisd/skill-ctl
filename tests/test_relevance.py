@@ -5,7 +5,13 @@ from skill_ctl.catalog import rank_results, relevance
 
 
 def skill(name, source="o/r", description="", installs=0, stars=0):
-    return {"name": name, "source": source, "description": description, "installs": installs, "stars": stars}
+    return {
+        "name": name,
+        "source": source,
+        "description": description,
+        "installs": installs,
+        "stars": stars,
+    }
 
 
 def test_name_match_tiers_are_ordered():
@@ -49,8 +55,10 @@ def test_threshold_drops_weak_results():
         skill("hooks", source="facebook/react"),
         skill("terraform", source="hashicorp/terraform"),
     ]
+
     def names(m):
         return [r["name"] for r in rank_results("react", results, min_relevance=m)]
+
     assert names(0) == ["react-hooks", "hooks", "terraform"]
     assert names(0.2) == ["react-hooks", "hooks"]
     assert names(0.6) == ["react-hooks"]
@@ -66,11 +74,18 @@ def test_threshold_read_from_config(monkeypatch):
 
 def test_search_applies_ranking_to_registry_results(monkeypatch):
     def mock_get_json(url, timeout=10):
-        return {"skills": [
-            {"name": "popular-but-unrelated", "source": "a/b", "installs": 99999, "id": "1"},
-            {"name": "vercel-react-best-practices", "source": "vercel-labs/agent-skills", "installs": 5000, "id": "2"},
-            {"name": "react", "source": "x/y", "installs": 10, "id": "3"},
-        ]}
+        return {
+            "skills": [
+                {"name": "popular-but-unrelated", "source": "a/b", "installs": 99999, "id": "1"},
+                {
+                    "name": "vercel-react-best-practices",
+                    "source": "vercel-labs/agent-skills",
+                    "installs": 5000,
+                    "id": "2",
+                },
+                {"name": "react", "source": "x/y", "installs": 10, "id": "3"},
+            ]
+        }
 
     monkeypatch.setattr(catalog, "load_config", lambda: {})
     monkeypatch.setattr(catalog, "get_json", mock_get_json)

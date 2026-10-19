@@ -135,6 +135,7 @@ search_limit: 50
 
 DEFAULT_CONFIG_YAML += "".join(LATER_SECTIONS.values())
 
+
 def invalidate_config_cache() -> None:
     """Clear the cached config.yaml parse tree."""
     read_config_file.cache_clear()
@@ -162,12 +163,14 @@ def read_config_file() -> dict:
         return {}
     try:
         import yaml
+
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except Exception as e:
         warnings.warn(f"Could not parse {CONFIG_FILE}: {e}", RuntimeWarning)
         return {}
     return data if isinstance(data, dict) else {}
+
 
 def append_later_sections(data: dict) -> None:
     """Write the sections a config.yaml from an older version never got.
@@ -184,7 +187,6 @@ def append_later_sections(data: dict) -> None:
         invalidate_config_cache()
     except OSError as e:
         warnings.warn(f"Could not add new settings to {CONFIG_FILE}: {e}", RuntimeWarning)
-
 
 
 def load_config() -> dict:
@@ -234,7 +236,9 @@ def load_config() -> dict:
         raw_limit = raw_file.get("search_limit")
         if raw_limit is None:
             raw_limit = raw_file.get("search_query_limit")
-        config["search_limit"] = max(1, int(raw_limit)) if raw_limit is not None else DEFAULT_SEARCH_LIMIT
+        config["search_limit"] = (
+            max(1, int(raw_limit)) if raw_limit is not None else DEFAULT_SEARCH_LIMIT
+        )
     except (TypeError, ValueError):
         config["search_limit"] = DEFAULT_SEARCH_LIMIT
 
@@ -242,9 +246,17 @@ def load_config() -> dict:
     # (`PRESETS_DIR / "/tmp/x"` is just "/tmp/x"), so refuse it rather than create
     # and later operate on a directory outside ~/.skill-ctl/presets.
     default_preset = config["default_preset"]
-    if not isinstance(default_preset, str) or not default_preset.strip() \
-            or default_preset in (".", "..") or "/" in default_preset or "\\" in default_preset:
-        warnings.warn(f"Invalid default_preset {default_preset!r} in {CONFIG_FILE}; using 'default'.", RuntimeWarning)
+    if (
+        not isinstance(default_preset, str)
+        or not default_preset.strip()
+        or default_preset in (".", "..")
+        or "/" in default_preset
+        or "\\" in default_preset
+    ):
+        warnings.warn(
+            f"Invalid default_preset {default_preset!r} in {CONFIG_FILE}; using 'default'.",
+            RuntimeWarning,
+        )
         default_preset = "default"
     config["default_preset"] = default_preset
 
@@ -275,15 +287,19 @@ def get_agent_dir_map(config: Optional[dict] = None) -> dict[str, str]:
         mapping.update(config.get("custom_agents", {}))
     return mapping
 
+
 def all_target_dirs(config: dict) -> list[str]:
     """Every relative directory a skill could have been applied to.
 
     `unapply` and `doctor` both have to look everywhere, not just at the
     configured apply_targets, since --agent could have put skills elsewhere.
     """
-    return list(dict.fromkeys(
-        list(get_agent_dir_map(config).values()) + list(config.get("apply_targets", DEFAULT_TARGETS))
-    ))
+    return list(
+        dict.fromkeys(
+            list(get_agent_dir_map(config).values())
+            + list(config.get("apply_targets", DEFAULT_TARGETS))
+        )
+    )
 
 
 def get_search_remotes(config: Optional[dict] = None) -> list[dict]:
@@ -295,4 +311,3 @@ def get_search_remotes(config: Optional[dict] = None) -> list[dict]:
     return [
         {"name": "skills.sh", "url": "https://skills.sh", "enabled": True},
     ]
-

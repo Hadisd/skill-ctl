@@ -103,9 +103,10 @@ _PROMPT_SYMBOLS = {
 def __getattr__(name: str):
     if name == "Prompt":
         from rich.prompt import Prompt
+
         return Prompt
     if name in _PROMPT_SYMBOLS:
         import skill_ctl.prompts as _prompts
+
         return getattr(_prompts, name)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-

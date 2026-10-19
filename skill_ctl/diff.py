@@ -70,30 +70,41 @@ def diff_directories(
 
         is_binary = (b"\0" in b_src[:1024]) or (b"\0" in b_tgt[:1024])
         if is_binary:
-            modified.append({
-                "path": rel,
-                "binary": True,
-                "added": 0,
-                "deleted": 0,
-                "diff": [],
-            })
+            modified.append(
+                {
+                    "path": rel,
+                    "binary": True,
+                    "added": 0,
+                    "deleted": 0,
+                    "diff": [],
+                }
+            )
         else:
             s_lines = b_src.decode("utf-8", errors="replace").splitlines(keepends=True)
             t_lines = b_tgt.decode("utf-8", errors="replace").splitlines(keepends=True)
-            diff_lines = list(difflib.unified_diff(
-                s_lines, t_lines,
-                fromfile=f"{source_label}/{rel}",
-                tofile=f"{target_label}/{rel}",
-            ))
-            added_cnt = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
-            deleted_cnt = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
-            modified.append({
-                "path": rel,
-                "binary": False,
-                "added": added_cnt,
-                "deleted": deleted_cnt,
-                "diff": diff_lines,
-            })
+            diff_lines = list(
+                difflib.unified_diff(
+                    s_lines,
+                    t_lines,
+                    fromfile=f"{source_label}/{rel}",
+                    tofile=f"{target_label}/{rel}",
+                )
+            )
+            added_cnt = sum(
+                1 for line in diff_lines if line.startswith("+") and not line.startswith("+++")
+            )
+            deleted_cnt = sum(
+                1 for line in diff_lines if line.startswith("-") and not line.startswith("---")
+            )
+            modified.append(
+                {
+                    "path": rel,
+                    "binary": False,
+                    "added": added_cnt,
+                    "deleted": deleted_cnt,
+                    "diff": diff_lines,
+                }
+            )
 
     identical = not (modified or added or deleted)
     return {
@@ -137,7 +148,8 @@ def diff_presets(
             has_diff = True
         else:
             diff_res = diff_directories(
-                s1[s_name], s2[s_name],
+                s1[s_name],
+                s2[s_name],
                 source_label=f"{preset1_name}/{s_name}",
                 target_label=f"{preset2_name}/{s_name}",
             )
@@ -167,7 +179,9 @@ def diff_presets(
     for s_name, res in results.items():
         st = res["status"]
         if st == "added_in_target":
-            console.print(f"  [choice]{s_name}[/choice]: [success]only in '{preset2_name}'[/success]")
+            console.print(
+                f"  [choice]{s_name}[/choice]: [success]only in '{preset2_name}'[/success]"
+            )
         elif st == "removed_in_target":
             console.print(f"  [choice]{s_name}[/choice]: [error]only in '{preset1_name}'[/error]")
         elif st == "modified":
@@ -177,7 +191,9 @@ def diff_presets(
                 if m["binary"]:
                     console.print(f"    • [warn]modified (binary):[/warn] {m['path']}")
                 else:
-                    console.print(f"    • [warn]modified:[/warn] {m['path']} [dim](+{m['added']}, -{m['deleted']})[/dim]")
+                    console.print(
+                        f"    • [warn]modified:[/warn] {m['path']} [dim](+{m['added']}, -{m['deleted']})[/dim]"
+                    )
             for a in details["added"]:
                 console.print(f"    • [success]added in {preset2_name}:[/success] {a}")
             for d in details["deleted"]:
@@ -193,32 +209,26 @@ def diff_presets(
 
 def diff_cmd(
     preset: Annotated[
-        Optional[str],
-        typer.Argument(help="Preset to compare against (default: applied preset).")
+        Optional[str], typer.Argument(help="Preset to compare against (default: applied preset).")
     ] = None,
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Project path to inspect (default: current directory).")
+        typer.Option(
+            "--project", "-p", help="Project path to inspect (default: current directory)."
+        ),
     ] = None,
     skill: Annotated[
-        Optional[str],
-        typer.Option("--skill", "-s", help="Specific skill to diff.")
+        Optional[str], typer.Option("--skill", "-s", help="Specific skill to diff.")
     ] = None,
     patch: Annotated[
-        bool,
-        typer.Option("--patch", "-u", help="Show unified diffs of modified files.")
+        bool, typer.Option("--patch", "-u", help="Show unified diffs of modified files.")
     ] = False,
-    stat: Annotated[
-        bool,
-        typer.Option("--stat", help="Show diffstat summary of changes.")
-    ] = False,
+    stat: Annotated[bool, typer.Option("--stat", help="Show diffstat summary of changes.")] = False,
     exit_code: Annotated[
-        bool,
-        typer.Option("--exit-code", help="Exit with code 1 if differences are found.")
+        bool, typer.Option("--exit-code", help="Exit with code 1 if differences are found.")
     ] = False,
     json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output machine-readable JSON.")
+        bool, typer.Option("--json", help="Output machine-readable JSON.")
     ] = False,
 ) -> None:
     """Show differences between project skills and a preset."""
@@ -285,7 +295,8 @@ def diff_cmd(
                 results[s_name] = {"status": "symlinked", "details": None}
             else:
                 diff_res = diff_directories(
-                    src_path, tgt_path,
+                    src_path,
+                    tgt_path,
                     source_label=f"preset:{preset_name}/{s_name}",
                     target_label=f"project:{s_name}",
                 )
@@ -323,7 +334,9 @@ def diff_cmd(
         elif st == "not_installed":
             console.print(f"  [choice]{s_name}[/choice]: [error]not installed in project[/error]")
         elif st == "untracked_in_preset":
-            console.print(f"  [choice]{s_name}[/choice]: [warn]only in project (not in preset)[/warn]")
+            console.print(
+                f"  [choice]{s_name}[/choice]: [warn]only in project (not in preset)[/warn]"
+            )
         elif st == "modified":
             console.print(f"  [choice]{s_name}[/choice]:")
             details = res["details"]
@@ -331,7 +344,9 @@ def diff_cmd(
                 if m["binary"]:
                     console.print(f"    • [warn]modified (binary):[/warn] {m['path']}")
                 else:
-                    console.print(f"    • [warn]modified:[/warn] {m['path']} [dim](+{m['added']}, -{m['deleted']})[/dim]")
+                    console.print(
+                        f"    • [warn]modified:[/warn] {m['path']} [dim](+{m['added']}, -{m['deleted']})[/dim]"
+                    )
             for a in details["added"]:
                 console.print(f"    • [success]added in project:[/success] {a}")
             for d in details["deleted"]:

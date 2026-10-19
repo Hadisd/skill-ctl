@@ -52,7 +52,9 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 manifest = json.loads(archive.read("manifest.json"))
             except (KeyError, ValueError) as error:
                 raise ValueError("missing or invalid manifest.json") from error
-            if manifest.get("format") != ARCHIVE_FORMAT or not isinstance(manifest.get("preset"), str):
+            if manifest.get("format") != ARCHIVE_FORMAT or not isinstance(
+                manifest.get("preset"), str
+            ):
                 raise ValueError("unsupported preset archive")
             for member in archive.infolist():
                 member_path = Path(member.filename)
@@ -83,7 +85,8 @@ def preset_changes(current: Path, incoming: Path) -> list[tuple[str, Path]]:
     changes = [("add", path) for path in sorted(incoming_files - current_files)]
     changes += [("remove", path) for path in sorted(current_files - incoming_files)]
     changes += [
-        ("change", path) for path in sorted(current_files & incoming_files)
+        ("change", path)
+        for path in sorted(current_files & incoming_files)
         if file_digest(current / path) != file_digest(incoming / path)
     ]
     return changes

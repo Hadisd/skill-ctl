@@ -11,20 +11,53 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.mark.skipif(os.name == "nt", reason="PTY rendering needs a Unix terminal")
-@pytest.mark.parametrize("skills, query, first_match, initial_query, select_before", [
-    ([("alpha", "A long description about building and reviewing code with a needle at the end."),
-      ("beta", "needle near the start")], "needle", "beta", False, None),
-    ([("tutorial", "dbds"), ("database-design", "Build database schemas")],
-     "dbds", "database-design", False, None),
-    ([("tutorial", "database"), ("database-design", "Build schemas")],
-     "database", "database-design", False, None),
-    ([("tutorial", "dbds"), ("database-design", "Build database schemas")],
-     "dbds", "database-design", True, None),
-    ([("alpha", "First skill"), ("beta", "Second skill")],
-     "beta", "beta", False, "alpha"),
-])
+@pytest.mark.parametrize(
+    "skills, query, first_match, initial_query, select_before",
+    [
+        (
+            [
+                (
+                    "alpha",
+                    "A long description about building and reviewing code with a needle at the end.",
+                ),
+                ("beta", "needle near the start"),
+            ],
+            "needle",
+            "beta",
+            False,
+            None,
+        ),
+        (
+            [("tutorial", "dbds"), ("database-design", "Build database schemas")],
+            "dbds",
+            "database-design",
+            False,
+            None,
+        ),
+        (
+            [("tutorial", "database"), ("database-design", "Build schemas")],
+            "database",
+            "database-design",
+            False,
+            None,
+        ),
+        (
+            [("tutorial", "dbds"), ("database-design", "Build database schemas")],
+            "dbds",
+            "database-design",
+            True,
+            None,
+        ),
+        ([("alpha", "First skill"), ("beta", "Second skill")], "beta", "beta", False, "alpha"),
+    ],
+)
 def test_fzf_keeps_columns_and_prioritizes_names_when_typing(
-    tmp_path, skills, query, first_match, initial_query, select_before,
+    tmp_path,
+    skills,
+    query,
+    first_match,
+    initial_query,
+    select_before,
 ):
     """Name matches lead, description matches remain, and columns stay aligned."""
     import re
@@ -46,8 +79,9 @@ def test_fzf_keeps_columns_and_prioritizes_names_when_typing(
         skill_dir = tmp_path / name
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("# Preview\n", encoding="utf-8")
-        candidates.append({"skill": name, "preset": "tools", "description": description,
-                           "path": str(skill_dir)})
+        candidates.append(
+            {"skill": name, "preset": "tools", "description": description, "path": str(skill_dir)}
+        )
     script = (
         f"import sys, json; sys.path.insert(0, {str(REPO_ROOT)!r}); "
         "from skill_ctl.picker import pick_with_fzf; "

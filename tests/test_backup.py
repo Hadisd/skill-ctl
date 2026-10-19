@@ -40,7 +40,10 @@ def remote(tmp_path):
 def skctl(env, *args):
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
-        cwd=str(Path(env["HOME"])), env=env, capture_output=True, text=True,
+        cwd=str(Path(env["HOME"])),
+        env=env,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -60,7 +63,9 @@ def test_push_then_restore_on_another_machine(tmp_path, remote):
     second = make_home(tmp_path, "home2", with_preset=False)
     res = skctl(second, "backup", "pull", "--repo", remote, "-y")
     assert res.returncode == 0, res.stdout + res.stderr
-    restored = Path(second["HOME"]) / ".skill-ctl" / "presets" / "demo" / ".agents" / "skills" / "tdd"
+    restored = (
+        Path(second["HOME"]) / ".skill-ctl" / "presets" / "demo" / ".agents" / "skills" / "tdd"
+    )
     assert (restored / "SKILL.md").read_text(encoding="utf-8") == "# tdd\n"
 
 
@@ -78,7 +83,9 @@ def test_status_reports_uncommitted_and_missing_repo(tmp_path, remote):
     assert "not backed up yet" in res.stdout
 
     assert skctl(env, "backup", "push", "--repo", remote).returncode == 0
-    new_skill = Path(env["HOME"]) / ".skill-ctl" / "presets" / "demo" / ".agents" / "skills" / "review"
+    new_skill = (
+        Path(env["HOME"]) / ".skill-ctl" / "presets" / "demo" / ".agents" / "skills" / "review"
+    )
     new_skill.mkdir(parents=True)
     (new_skill / "SKILL.md").write_text("# review\n", encoding="utf-8")
 
@@ -149,19 +156,46 @@ def test_export_and_import_preset_with_preview_and_rename(tmp_path):
 
     imported = skctl(second, "presets", "import", str(archive), "--rename", "copied")
     assert imported.returncode == 0, imported.stdout + imported.stderr
-    skill = Path(second["HOME"]) / ".skill-ctl" / "presets" / "copied" / ".agents" / "skills" / "tdd" / "SKILL.md"
+    skill = (
+        Path(second["HOME"])
+        / ".skill-ctl"
+        / "presets"
+        / "copied"
+        / ".agents"
+        / "skills"
+        / "tdd"
+        / "SKILL.md"
+    )
     assert skill.read_text(encoding="utf-8") == "# tdd\n"
 
 
 def test_import_preset_from_a_repository(tmp_path, remote):
     first = make_home(tmp_path, "home1")
-    research = Path(first["HOME"]) / ".skill-ctl" / "presets" / "research" / ".agents" / "skills" / "papers"
+    research = (
+        Path(first["HOME"])
+        / ".skill-ctl"
+        / "presets"
+        / "research"
+        / ".agents"
+        / "skills"
+        / "papers"
+    )
     research.mkdir(parents=True)
     (research / "SKILL.md").write_text("# papers\n", encoding="utf-8")
     assert skctl(first, "backup", "push", "--repo", remote).returncode == 0
 
     second = make_home(tmp_path, "home2", with_preset=False)
-    preview = skctl(second, "presets", "import", remote, "--preset", "demo", "--rename", "community-demo", "--dry-run")
+    preview = skctl(
+        second,
+        "presets",
+        "import",
+        remote,
+        "--preset",
+        "demo",
+        "--rename",
+        "community-demo",
+        "--dry-run",
+    )
     assert preview.returncode == 0, preview.stdout + preview.stderr
     imported = Path(second["HOME"]) / ".skill-ctl" / "presets" / "community-demo"
     assert "Import preview" in preview.stdout
@@ -170,8 +204,19 @@ def test_import_preset_from_a_repository(tmp_path, remote):
     result = skctl(second, "presets", "import", remote, "--preset", "demo", "--preset", "research")
     assert result.returncode == 0, result.stdout + result.stderr
     demo = Path(second["HOME"]) / ".skill-ctl" / "presets" / "demo"
-    assert (demo / ".agents" / "skills" / "tdd" / "SKILL.md").read_text(encoding="utf-8") == "# tdd\n"
-    assert (Path(second["HOME"]) / ".skill-ctl" / "presets" / "research" / ".agents" / "skills" / "papers" / "SKILL.md").read_text(encoding="utf-8") == "# papers\n"
+    assert (demo / ".agents" / "skills" / "tdd" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "# tdd\n"
+    assert (
+        Path(second["HOME"])
+        / ".skill-ctl"
+        / "presets"
+        / "research"
+        / ".agents"
+        / "skills"
+        / "papers"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8") == "# papers\n"
 
 
 def test_backup_excludes_and_untracks_cache(tmp_path, remote):
@@ -194,19 +239,28 @@ def test_backup_excludes_and_untracks_cache(tmp_path, remote):
     base_dir = Path(first["HOME"]) / ".skill-ctl"
     (cache_dir / "old_cached.json").write_text("{}", encoding="utf-8")
     subprocess.run(["git", "-C", str(base_dir), "add", "-f", "cache/old_cached.json"], check=True)
-    subprocess.run(["git", "-C", str(base_dir), "commit", "-m", "add old cache manually"], check=True, env=first)
+    subprocess.run(
+        ["git", "-C", str(base_dir), "commit", "-m", "add old cache manually"],
+        check=True,
+        env=first,
+    )
 
     # Next push should untrack cache and metadata cache
     (base_dir / ".metadata_cache.json").write_text("{}", encoding="utf-8")
     subprocess.run(["git", "-C", str(base_dir), "add", "-f", ".metadata_cache.json"], check=True)
-    subprocess.run(["git", "-C", str(base_dir), "commit", "-m", "add metadata cache manually"], check=True, env=first)
+    subprocess.run(
+        ["git", "-C", str(base_dir), "commit", "-m", "add metadata cache manually"],
+        check=True,
+        env=first,
+    )
 
     res = skctl(first, "backup", "push")
     assert res.returncode == 0, res.stdout + res.stderr
 
     tracked_cache = subprocess.run(
         ["git", "-C", str(base_dir), "ls-files", "cache", ".metadata_cache.json"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert tracked_cache == ""
-

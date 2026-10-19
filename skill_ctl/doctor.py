@@ -32,19 +32,19 @@ def broken_links(project: Path, rel_dirs: list) -> list[Path]:
 def doctor(
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Project to check (default: current directory).")
+        typer.Option("--project", "-p", help="Project to check (default: current directory)."),
     ] = None,
     global_check: Annotated[
         bool,
-        typer.Option("--global", "-g", help="Check global skills (~/.agents/skills, ~/.claude/skills, ...).")
+        typer.Option(
+            "--global", "-g", help="Check global skills (~/.agents/skills, ~/.claude/skills, ...)."
+        ),
     ] = False,
     all_projects: Annotated[
-        bool,
-        typer.Option("--all", help="Check every project that `apply` has recorded.")
+        bool, typer.Option("--all", help="Check every project that `apply` has recorded.")
     ] = False,
     fix: Annotated[
-        bool,
-        typer.Option("--fix", help="Delete the broken links and drop stale records.")
+        bool, typer.Option("--fix", help="Delete the broken links and drop stale records.")
     ] = False,
 ) -> None:
     """Check applied projects or global scope for skill links that lead nowhere.
@@ -91,13 +91,14 @@ def doctor(
         # copies are real directories, which only `unapply --force` should remove,
         # so the record of them has to stay until it does.
         stranded_copies = [
-            name for name in missing_presets
-            if (recorded.get(name) or {}).get("mode") == "copy"
+            name for name in missing_presets if (recorded.get(name) or {}).get("mode") == "copy"
         ]
         for name in missing_presets:
             if name in stranded_copies:
                 print_warn(f"Preset '{name}' is gone, but its copied skills are still here.")
-                console.print(f"    Remove them with: [header]skctl unapply {name} --force[/header]")
+                console.print(
+                    f"    Remove them with: [header]skctl unapply {name} --force[/header]"
+                )
             else:
                 print_warn(f"Preset '{name}' is recorded here but no longer exists.")
         for link in dangling:

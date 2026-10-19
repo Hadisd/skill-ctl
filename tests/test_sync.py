@@ -14,10 +14,16 @@ def device(tmp_path, name):
     home = tmp_path / name
     home.mkdir()
     return dict(
-        os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT),
-        GIT_AUTHOR_NAME="sync test", GIT_AUTHOR_EMAIL="test@example.com",
-        GIT_COMMITTER_NAME="sync test", GIT_COMMITTER_EMAIL="test@example.com",
-        GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,
+        os.environ,
+        HOME=str(home),
+        USERPROFILE=str(home),
+        PYTHONPATH=str(REPO_ROOT),
+        GIT_AUTHOR_NAME="sync test",
+        GIT_AUTHOR_EMAIL="test@example.com",
+        GIT_COMMITTER_NAME="sync test",
+        GIT_COMMITTER_EMAIL="test@example.com",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_SYSTEM=os.devnull,
     )
 
 
@@ -34,14 +40,21 @@ def skill(env, name="tdd", content="# tdd\n"):
 
 def git(env, *args):
     return subprocess.run(
-        ["git", "-C", str(base(env)), *args], env=env, capture_output=True, text=True, check=True,
+        ["git", "-C", str(base(env)), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
 
 def run(env, *args, ok=True):
     result = subprocess.run(
-        [sys.executable, "-m", "skill_ctl.cli", *args], env=env,
-        cwd=env["HOME"], capture_output=True, text=True,
+        [sys.executable, "-m", "skill_ctl.cli", *args],
+        env=env,
+        cwd=env["HOME"],
+        capture_output=True,
+        text=True,
     )
     if ok:
         assert result.returncode == 0, result.stdout + result.stderr
@@ -87,7 +100,9 @@ def test_sync_merges_independent_edits_and_deletions(tmp_path, remote):
     run(first, "sync")
     for env in (first, second):
         assert (base(env) / "presets/demo/.agents/skills/react/SKILL.md").read_text() == "# react\n"
-        assert (base(env) / "presets/demo/.agents/skills/pytest/SKILL.md").read_text() == "# pytest\n"
+        assert (
+            base(env) / "presets/demo/.agents/skills/pytest/SKILL.md"
+        ).read_text() == "# pytest\n"
         assert not (base(env) / "presets/demo/.agents/skills/tdd/SKILL.md").exists()
         assert git(env, "status", "--porcelain") == ""
     assert git(first, "rev-parse", "HEAD") == git(second, "rev-parse", "HEAD")
@@ -107,14 +122,23 @@ def test_sync_handles_utf8_paths_with_windows_default_encoding(tmp_path, remote)
         "from skill_ctl.cli import main; main()"
     )
     result = subprocess.run(
-        [sys.executable, "-c", bootstrap, "sync"], env=second, cwd=second["HOME"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        [sys.executable, "-c", bootstrap, "sync"],
+        env=second,
+        cwd=second["HOME"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Presets synced" in result.stdout
-    assert (base(second) / f"presets/demo/.agents/skills/{name}/SKILL.md").read_text() == "# Unicode filename\n"
+    assert (
+        base(second) / f"presets/demo/.agents/skills/{name}/SKILL.md"
+    ).read_text() == "# Unicode filename\n"
     run(first, "sync")
-    assert (base(first) / "presets/demo/.agents/skills/local-skill/SKILL.md").read_text() == "# local work\n"
+    assert (
+        base(first) / "presets/demo/.agents/skills/local-skill/SKILL.md"
+    ).read_text() == "# local work\n"
 
 
 def test_git_capture_handles_invalid_utf8_output(tmp_path, remote, monkeypatch):
@@ -142,8 +166,13 @@ def test_sync_conflict_aborts_preserves_versions_and_can_be_resolved(tmp_path, r
     assert "merge was aborted" in output
     assert local.read_text() == "# desktop version\n"
     assert git(second, "status", "--porcelain") == ""
-    assert git(second, "show", "HEAD:presets/demo/.agents/skills/tdd/SKILL.md") == "# desktop version"
-    assert git(second, "show", "origin/main:presets/demo/.agents/skills/tdd/SKILL.md") == "# laptop version"
+    assert (
+        git(second, "show", "HEAD:presets/demo/.agents/skills/tdd/SKILL.md") == "# desktop version"
+    )
+    assert (
+        git(second, "show", "origin/main:presets/demo/.agents/skills/tdd/SKILL.md")
+        == "# laptop version"
+    )
     assert not (base(second) / ".git/MERGE_HEAD").exists()
     assert git(second, "ls-remote", "origin", "refs/heads/main").split()[0] == remote_head
 
@@ -151,7 +180,9 @@ def test_sync_conflict_aborts_preserves_versions_and_can_be_resolved(tmp_path, r
     run(second, "sync", ok=False)
     merge = subprocess.run(
         ["git", "-C", str(base(second)), "merge", "--no-edit", "origin/main"],
-        env=second, capture_output=True, text=True,
+        env=second,
+        capture_output=True,
+        text=True,
     )
     assert merge.returncode != 0
     run(second, "sync", ok=False)  # An unresolved manual merge is protected.
@@ -160,7 +191,9 @@ def test_sync_conflict_aborts_preserves_versions_and_can_be_resolved(tmp_path, r
     git(second, "commit", "-m", "resolve skill conflict")
     run(second, "sync")
     run(first, "sync")
-    assert (base(first) / "presets/demo/.agents/skills/tdd/SKILL.md").read_text() == "# resolved version\n"
+    assert (
+        base(first) / "presets/demo/.agents/skills/tdd/SKILL.md"
+    ).read_text() == "# resolved version\n"
 
 
 @pytest.mark.parametrize("args", [("sync", "--dry-run"), ("sync", "status")])

@@ -25,7 +25,9 @@ def get_detected_global_agents() -> list[str]:
         agents.append("hermes")
     return agents
 
+
 REGISTER_MJS = Path(__file__).parent / "register.mjs"
+
 
 def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
     """Executes npx skills with the given arguments in the given cwd."""
@@ -48,7 +50,10 @@ def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
                 loader_opt = f"--no-deprecation --import={REGISTER_MJS.resolve().as_uri()}"
                 env["NODE_OPTIONS"] = f"{loader_opt} {env.get('NODE_OPTIONS', '')}".strip()
             elif patch:
-                warnings.warn(f"Loader missing at {REGISTER_MJS}; 'npx skills' may ask for scope.", RuntimeWarning)
+                warnings.warn(
+                    f"Loader missing at {REGISTER_MJS}; 'npx skills' may ask for scope.",
+                    RuntimeWarning,
+                )
 
     # Resolve npx via PATH ourselves: on Windows it is 'npx.cmd', and subprocess
     # does not consult PATHEXT, so a bare "npx" would never be found there.
@@ -60,7 +65,14 @@ def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
     # If -y / --yes is not passed, ensure npx skills runs interactively by clearing
     # AI agent detection env vars so it prompts the user for agent selection.
     if "-y" not in cmd_args and "--yes" not in cmd_args:
-        for k in ("ANTIGRAVITY_AGENT", "AI_AGENT", "CURSOR_AGENT", "CURSOR_TRACE_ID", "GEMINI_CLI", "CODEX_SANDBOX"):
+        for k in (
+            "ANTIGRAVITY_AGENT",
+            "AI_AGENT",
+            "CURSOR_AGENT",
+            "CURSOR_TRACE_ID",
+            "GEMINI_CLI",
+            "CODEX_SANDBOX",
+        ):
             env.pop(k, None)
 
     return subprocess.run([npx, "skills"] + cmd_args, cwd=cwd, env=env).returncode

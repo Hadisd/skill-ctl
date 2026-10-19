@@ -203,7 +203,9 @@ Register-ArgumentCompleter -Native -CommandName skctl, skill-ctl -ScriptBlock {{
 
 
 def completion(
-    shell: Annotated[Optional[Literal["fish", "bash", "zsh", "powershell"]], typer.Argument()] = None,
+    shell: Annotated[
+        Optional[Literal["fish", "bash", "zsh", "powershell"]], typer.Argument()
+    ] = None,
 ) -> None:
     """Print a completion script for your shell. Omit the shell to detect it.
 
@@ -215,8 +217,11 @@ def completion(
     if shell is None:
         detected = os.path.basename(os.environ.get("SHELL", "")).lower()
         shell = {
-            "fish": "fish", "bash": "bash", "zsh": "zsh",
-            "pwsh": "powershell", "powershell": "powershell",
+            "fish": "fish",
+            "bash": "bash",
+            "zsh": "zsh",
+            "pwsh": "powershell",
+            "powershell": "powershell",
         }.get(detected)
         if shell is None and os.environ.get("PSModulePath"):
             shell = "powershell"

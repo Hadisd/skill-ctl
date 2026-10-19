@@ -20,10 +20,24 @@ def prioritize_names(lines: list[str], query: str) -> list[str]:
 
     def matches(fields: str) -> list[str]:
         result = subprocess.run(
-            ["fzf", "--ansi", "--delimiter", "\t", "--with-nth", "1,2,3,4",
-             "--nth", fields, "--filter", query],
-            input="\n".join(lines), capture_output=True, text=True,
-            encoding="utf-8", errors="replace", env=env,
+            [
+                "fzf",
+                "--ansi",
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "1,2,3,4",
+                "--nth",
+                fields,
+                "--filter",
+                query,
+            ],
+            input="\n".join(lines),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
         )
         if result.returncode not in (0, 1):
             result.check_returncode()

@@ -64,6 +64,7 @@ def _write_disk_cache(path: Path, data: Any) -> None:
     except OSError:
         pass
 
+
 # `npx skills` reads the same override, so pointing both at one mirror takes a
 # single variable. It also lets the search be aimed at a local stub in testing.
 SKILLS_URL = os.environ.get("SKILLS_API_URL") or "https://skills.sh"
@@ -109,7 +110,9 @@ def query_cache_key(
     eff_limit = get_search_limit(limit)
     q_clean = query.strip()
     remotes_str = ",".join(sorted(remotes)) if remotes else ""
-    return hashlib.sha256(f"{q_clean}\0{owner or ''}\0{remotes_str}\0{eff_limit}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{q_clean}\0{owner or ''}\0{remotes_str}\0{eff_limit}".encode()
+    ).hexdigest()
 
 
 # Cached per process: write_rows runs as a fresh `python -m skill_ctl.catalog
@@ -147,7 +150,9 @@ def get_github_token() -> Optional[str]:
         try:
             res = subprocess.run(
                 ["gh", "auth", "token"],
-                capture_output=True, text=True, timeout=2.0,
+                capture_output=True,
+                text=True,
+                timeout=2.0,
             )
             if res.returncode == 0 and res.stdout.strip():
                 _GH_TOKEN_CACHE = res.stdout.strip()
@@ -182,7 +187,11 @@ def parse_github_repo(url_or_str: str) -> Optional[str]:
     if val.startswith("git@github.com:"):
         val = val.removeprefix("git@github.com:").removesuffix(".git")
         parts = val.split("/")
-        if len(parts) == 2 and re.match(r"^[a-zA-Z0-9_.-]+$", parts[0]) and re.match(r"^[a-zA-Z0-9_.-]+$", parts[1]):
+        if (
+            len(parts) == 2
+            and re.match(r"^[a-zA-Z0-9_.-]+$", parts[0])
+            and re.match(r"^[a-zA-Z0-9_.-]+$", parts[1])
+        ):
             return f"{parts[0]}/{parts[1]}"
         return None
     try:
@@ -205,7 +214,13 @@ def parse_github_repo(url_or_str: str) -> Optional[str]:
     return None
 
 
-def search_skills_sh(query: str, owner: Optional[str] = None, url: str = SKILLS_URL, timeout: float = SEARCH_TIMEOUT, limit: Optional[int] = None) -> list[dict]:
+def search_skills_sh(
+    query: str,
+    owner: Optional[str] = None,
+    url: str = SKILLS_URL,
+    timeout: float = SEARCH_TIMEOUT,
+    limit: Optional[int] = None,
+) -> list[dict]:
     """Search skills.sh API for agent skills."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []
@@ -224,28 +239,38 @@ def search_skills_sh(query: str, owner: Optional[str] = None, url: str = SKILLS_
 
     results = []
     for item in data.get("skills", []):
-        results.append({
-            "name": item.get("name", ""),
-            "source": item.get("source") or item.get("id", ""),
-            "id": item.get("id", ""),
-            "installs": item.get("installs"),
-            "stars": None,
-            "updated_at": item.get("updated_at") or item.get("updatedAt"),
-            "description": "",
-            "remote": "skills.sh",
-            "url": f"{url.rstrip('/')}/{item.get('id', '')}",
-        })
+        results.append(
+            {
+                "name": item.get("name", ""),
+                "source": item.get("source") or item.get("id", ""),
+                "id": item.get("id", ""),
+                "installs": item.get("installs"),
+                "stars": None,
+                "updated_at": item.get("updated_at") or item.get("updatedAt"),
+                "description": "",
+                "remote": "skills.sh",
+                "url": f"{url.rstrip('/')}/{item.get('id', '')}",
+            }
+        )
     return results
 
 
-def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP_URL, timeout: float = SEARCH_TIMEOUT, limit: Optional[int] = None) -> list[dict]:
+def search_skillsmp(
+    query: str,
+    owner: Optional[str] = None,
+    url: str = SKILLSMP_URL,
+    timeout: float = SEARCH_TIMEOUT,
+    limit: Optional[int] = None,
+) -> list[dict]:
     """Search skillsmp.com API for agent skills."""
     if not query or len(query.strip()) < MIN_QUERY_LENGTH:
         return []
     req_limit = min(get_search_limit(limit), 50)
     params = {"q": query.strip(), "limit": str(req_limit)}
     try:
-        data = get_json(f"{url.rstrip('/')}/api/v1/skills/search?{urlencode(params)}", timeout=timeout)
+        data = get_json(
+            f"{url.rstrip('/')}/api/v1/skills/search?{urlencode(params)}", timeout=timeout
+        )
     except HTTPError as error:
         if error.code == 429:
             print_error("skillsmp.com is rate limiting this search. Wait a moment and try again.")
@@ -263,25 +288,33 @@ def search_skillsmp(query: str, owner: Optional[str] = None, url: str = SKILLSMP
     results = []
     for item in skills_list:
         gh_url = item.get("githubUrl", "")
-        repo_source = parse_github_repo(gh_url) or (f"{item.get('author')}/{item.get('name')}" if item.get("author") else item.get("name", ""))
+        repo_source = parse_github_repo(gh_url) or (
+            f"{item.get('author')}/{item.get('name')}"
+            if item.get("author")
+            else item.get("name", "")
+        )
         if owner:
             owner_lower = owner.lower()
             author_lower = str(item.get("author", "")).lower()
             source_lower = repo_source.lower()
             if not (source_lower.startswith(f"{owner_lower}/") or author_lower == owner_lower):
                 continue
-        results.append({
-            "name": item.get("name", ""),
-            "source": repo_source,
-            "id": item.get("id", ""),
-            "installs": None,
-            "stars": item.get("stars"),
-            "updated_at": item.get("updatedAt"),
-            "description": item.get("description", ""),
-            "remote": "skillsmp",
-            "url": item.get("skillUrl") or gh_url or f"{url.rstrip('/')}/skills/{item.get('id', '')}",
-            "github_url": gh_url,
-        })
+        results.append(
+            {
+                "name": item.get("name", ""),
+                "source": repo_source,
+                "id": item.get("id", ""),
+                "installs": None,
+                "stars": item.get("stars"),
+                "updated_at": item.get("updatedAt"),
+                "description": item.get("description", ""),
+                "remote": "skillsmp",
+                "url": item.get("skillUrl")
+                or gh_url
+                or f"{url.rstrip('/')}/skills/{item.get('id', '')}",
+                "github_url": gh_url,
+            }
+        )
     return results
 
 
@@ -327,7 +360,9 @@ def relevance(query: str, skill: dict) -> float:
     return sum(_term_relevance(term, skill) for term in terms) / len(terms)
 
 
-def rank_results(query: str, results: list[dict], min_relevance: Optional[float] = None) -> list[dict]:
+def rank_results(
+    query: str, results: list[dict], min_relevance: Optional[float] = None
+) -> list[dict]:
     """Drop results below the relevance threshold and order the rest best match first.
 
     `results` arrives most-popular first and the sort is stable, so popularity
@@ -381,7 +416,9 @@ def _search_unranked(
             return cached
 
     if remotes:
-        selected_names = {r.strip().lower() for item in remotes for r in item.split(",") if r.strip()}
+        selected_names = {
+            r.strip().lower() for item in remotes for r in item.split(",") if r.strip()
+        }
         if "all" in selected_names or "*" in selected_names:
             all_remotes = [
                 {"name": "skills.sh", "url": SKILLS_URL, "type": "skills_sh", "enabled": True},
@@ -389,8 +426,10 @@ def _search_unranked(
             ]
         else:
             filtered = [
-                r for r in get_search_remotes()
-                if r.get("name", "").lower() in selected_names or r.get("type", "").lower() in selected_names
+                r
+                for r in get_search_remotes()
+                if r.get("name", "").lower() in selected_names
+                or r.get("type", "").lower() in selected_names
             ]
             if filtered:
                 all_remotes = filtered
@@ -398,9 +437,23 @@ def _search_unranked(
                 all_remotes = []
                 for name in selected_names:
                     if "skillsmp" in name:
-                        all_remotes.append({"name": "skillsmp", "url": SKILLSMP_URL, "type": "skillsmp", "enabled": True})
+                        all_remotes.append(
+                            {
+                                "name": "skillsmp",
+                                "url": SKILLSMP_URL,
+                                "type": "skillsmp",
+                                "enabled": True,
+                            }
+                        )
                     elif "skills.sh" in name or "skills" in name:
-                        all_remotes.append({"name": "skills.sh", "url": SKILLS_URL, "type": "skills_sh", "enabled": True})
+                        all_remotes.append(
+                            {
+                                "name": "skills.sh",
+                                "url": SKILLS_URL,
+                                "type": "skills_sh",
+                                "enabled": True,
+                            }
+                        )
     else:
         all_remotes = get_search_remotes()
 
@@ -558,7 +611,7 @@ def format_relative_time(value: object, short: bool = False) -> Optional[str]:
 def truncate(value: object, width: int) -> str:
     """Fit a value in an fzf column without letting it push other columns away."""
     text = str(value or "")
-    return text if len(text) <= width else text[:width - 1] + "…"
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def format_row(skill: dict) -> str:
@@ -566,7 +619,9 @@ def format_row(skill: dict) -> str:
     name = truncate(skill.get("name"), NAME_WIDTH)
     source = truncate(skill.get("source") or skill.get("id"), SOURCE_WIDTH)
     metric = format_metric(skill.get("installs"), skill.get("stars"))
-    updated = truncate(format_relative_time(skill.get("updated_at"), short=True) or "-", UPDATED_WIDTH)
+    updated = truncate(
+        format_relative_time(skill.get("updated_at"), short=True) or "-", UPDATED_WIDTH
+    )
     remote = truncate(skill.get("remote") or "remote", REMOTE_WIDTH)
     colors = row_colors()
     reset = colors["reset"]
@@ -621,7 +676,8 @@ def choose(
     try:
         selected = Prompt.ask(
             "Skill number(s) to inspect [dim](space/comma separated for several)[/dim], or press Enter to cancel",
-            default="", console=console,
+            default="",
+            console=console,
         ).strip()
     except (EOFError, KeyboardInterrupt):
         console.print()
@@ -718,25 +774,48 @@ def choose_with_fzf(
 
         result = subprocess.run(
             [
-                "fzf", "--multi", "--ansi", "--phony", "--disabled", "--query", query,
-                "--delimiter", "\t", "--with-nth", "1",
-                "--header", header,
-                "--color", fzf_color_arg(load_config().get("theme")),
-                "--expect", "alt-a,alt-p,alt-g",
-                "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
-                "--bind", f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
-                "--bind", f"start:reload({rows})+refresh-preview",
-                "--bind", f"change:reload({debounced_rows})+refresh-preview",
-                "--preview", preview, "--preview-window", preview_window_options(),
+                "fzf",
+                "--multi",
+                "--ansi",
+                "--phony",
+                "--disabled",
+                "--query",
+                query,
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "1",
+                "--header",
+                header,
+                "--color",
+                fzf_color_arg(load_config().get("theme")),
+                "--expect",
+                "alt-a,alt-p,alt-g",
+                "--bind",
+                f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                "--bind",
+                f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
+                "--bind",
+                f"start:reload({rows})+refresh-preview",
+                "--bind",
+                f"change:reload({debounced_rows})+refresh-preview",
+                "--preview",
+                preview,
+                "--preview-window",
+                preview_window_options(),
             ],
             input=initial_input,
-            stdout=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace",
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0 or not result.stdout.strip():
             return []
         selected = result.stdout.splitlines()
-        action = selected.pop(0) if selected and selected[0] in ("alt-a", "alt-p", "alt-g") else None
+        action = (
+            selected.pop(0) if selected and selected[0] in ("alt-a", "alt-p", "alt-g") else None
+        )
         if selected and not selected[0]:
             selected.pop(0)
         chosen = []
@@ -770,7 +849,14 @@ def choose_with_fzf(
                     for name in picked_names
                 ]
             else:
-                chosen = [{"name": "all skills", "source": repo_source, "_all_from_source": True, "_action": action}]
+                chosen = [
+                    {
+                        "name": "all skills",
+                        "source": repo_source,
+                        "_all_from_source": True,
+                        "_action": action,
+                    }
+                ]
         return chosen
 
 
@@ -803,7 +889,9 @@ def fetch_repo_skills(source: str, branch: str = "HEAD", timeout: float = 3.0) -
 
     # 1. Try GitHub trees API (fast, single recursive call)
     try:
-        tree = get_json(f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1", timeout=timeout).get("tree", [])
+        tree = get_json(
+            f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1", timeout=timeout
+        ).get("tree", [])
         for entry in tree:
             if entry.get("type") == "blob":
                 p = entry.get("path", "")
@@ -850,21 +938,30 @@ def choose_repo_skills(source: str, skills: list[str]) -> list[str]:
         )
         result = subprocess.run(
             [
-                "fzf", "--multi", "--ansi",
-                "--header", header,
-                "--color", fzf_color_arg(load_config().get("theme")),
-                "--bind", "ctrl-a:select-all,ctrl-d:deselect-all",
-                "--prompt", "Select skills > ",
+                "fzf",
+                "--multi",
+                "--ansi",
+                "--header",
+                header,
+                "--color",
+                fzf_color_arg(load_config().get("theme")),
+                "--bind",
+                "ctrl-a:select-all,ctrl-d:deselect-all",
+                "--prompt",
+                "Select skills > ",
             ],
             input="\n".join(skills),
-            stdout=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace",
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0:
             return []
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
     else:
         from skill_ctl.prompts import prompt_skills
+
         try:
             return prompt_skills(skills, action="install")
         except SystemExit:
@@ -968,7 +1065,9 @@ def frontmatter(source: str, skill_name: str, branch: str = "main", timeout: flo
 
     if text is None:
         try:
-            tree = get_json(f"{GITHUB_API}/repos/{repo}/git/trees/HEAD?recursive=1", timeout=2.5).get("tree", [])
+            tree = get_json(
+                f"{GITHUB_API}/repos/{repo}/git/trees/HEAD?recursive=1", timeout=2.5
+            ).get("tree", [])
             blob_candidates = [
                 entry["path"]
                 for entry in tree
@@ -1031,8 +1130,14 @@ def details(skill: dict) -> dict:
         if not is_mocked:
             cached_repo = _read_disk_cache(repo_cache_file, ttl=REPO_CACHE_TTL)
             if cached_repo is not None:
-                stars = cached_stars if cached_stars is not None else cached_repo.get("stargazers_count")
-                updated = cached_updated or cached_repo.get("pushed_at") or cached_repo.get("updated_at")
+                stars = (
+                    cached_stars
+                    if cached_stars is not None
+                    else cached_repo.get("stargazers_count")
+                )
+                updated = (
+                    cached_updated or cached_repo.get("pushed_at") or cached_repo.get("updated_at")
+                )
                 return stars, updated
         try:
             repo_data = get_json(f"{GITHUB_API}/repos/{repo}", timeout=2.5)
@@ -1063,16 +1168,21 @@ def details(skill: dict) -> dict:
         "name": name,
         "source": source,
         "remote": remote,
-        "installs": format_number(skill.get("installs")) if skill.get("installs") is not None else None,
+        "installs": format_number(skill.get("installs"))
+        if skill.get("installs") is not None
+        else None,
         "stars": stars,
         "updated_at": updated_at,
         "updated": format_relative_time(updated_at),
         "metadata": metadata,
-        "url": skill.get("url") or (f"{SKILLS_URL}/{skill.get('id', '')}" if "skills.sh" in remote else ""),
+        "url": skill.get("url")
+        or (f"{SKILLS_URL}/{skill.get('id', '')}" if "skills.sh" in remote else ""),
     }
 
 
-def prune_cache(max_size_bytes: int = 50 * 1024 * 1024, max_age_seconds: float = 14 * 86400, force: bool = False) -> None:
+def prune_cache(
+    max_size_bytes: int = 50 * 1024 * 1024, max_age_seconds: float = 14 * 86400, force: bool = False
+) -> None:
     """Evict expired and excess cache files."""
     if not CACHE_DIR.exists():
         return
@@ -1256,6 +1366,16 @@ if __name__ == "__main__":
             import time
 
             time.sleep(args.debounce)
-        print("\n".join(write_rows(args.query, Path(args.cache_dir), args.owner, remotes=args.remotes, limit=args.limit)))
+        print(
+            "\n".join(
+                write_rows(
+                    args.query,
+                    Path(args.cache_dir),
+                    args.owner,
+                    remotes=args.remotes,
+                    limit=args.limit,
+                )
+            )
+        )
     else:
         raise SystemExit("catalog preview is only available through `skctl search`")

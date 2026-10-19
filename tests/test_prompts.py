@@ -101,7 +101,10 @@ def test_destination_menu_combines_default_pick_and_create(monkeypatch, tmp_path
 
 def test_preset_or_new_has_create_new_as_zero_on_top(monkeypatch, capsys):
     answer(monkeypatch, "0", "brand-new")
-    assert ui_mod.prompt_preset_or_new(["frontend", "writing"], default_preset="default") == "brand-new"
+    assert (
+        ui_mod.prompt_preset_or_new(["frontend", "writing"], default_preset="default")
+        == "brand-new"
+    )
     out = capsys.readouterr().out
     assert "0) Create new preset" in out
     assert "1) default" in out
@@ -121,7 +124,6 @@ def test_preset_or_new_selects_existing_or_typed_name(monkeypatch):
     assert ui_mod.prompt_preset_or_new(["frontend"], default_preset="default") == "custom-name"
 
 
-
 def test_fzf_binds_ctrl_a_to_select_all(monkeypatch):
     """Narrow by typing, ctrl-a, Enter: the whole filtered set in three keystrokes."""
     seen = {}
@@ -132,13 +134,21 @@ def test_fzf_binds_ctrl_a_to_select_all(monkeypatch):
 
     monkeypatch.setattr(picker_mod.shutil, "which", lambda name: "/usr/bin/fzf")
     monkeypatch.setattr(
-        picker_mod.subprocess, "run",
+        picker_mod.subprocess,
+        "run",
         lambda cmd, **kwargs: seen.update(cmd=cmd) or Result(),
     )
 
-    picker_mod.pick_with_fzf([{
-        "skill": "tdd", "preset": "p", "description": "d", "path": "/tmp/tdd",
-    }])
+    picker_mod.pick_with_fzf(
+        [
+            {
+                "skill": "tdd",
+                "preset": "p",
+                "description": "d",
+                "path": "/tmp/tdd",
+            }
+        ]
+    )
 
     binds = seen["cmd"][seen["cmd"].index("--bind") + 1]
     assert "ctrl-a:select-all" in binds
@@ -194,4 +204,3 @@ def test_browse_preset_choices(monkeypatch, tmp_path):
 
     chosen = _browse_preset_choices(["preset1"], {}, presets_dir, extra=("Create new", "Help text"))
     assert chosen == 1
-

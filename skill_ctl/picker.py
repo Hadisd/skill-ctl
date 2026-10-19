@@ -44,7 +44,7 @@ DEFAULT_HEADER = (
 
 def truncate(value: object, width: int) -> str:
     text = str(value or "").replace("\t", " ")
-    return text if len(text) <= width else text[:width - 1] + "…"
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def preview_markdown_command(field_placeholder: str = "{5}") -> str:
@@ -52,8 +52,8 @@ def preview_markdown_command(field_placeholder: str = "{5}") -> str:
     width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
     theme = shlex.quote(bat_theme(load_config().get("theme")))
     bat_options = (
-        f'--color=always --paging=never --style=plain --language=md --theme={theme} '
-        f'--squeeze-blank --wrap=character --terminal-width={width}'
+        f"--color=always --paging=never --style=plain --language=md --theme={theme} "
+        f"--squeeze-blank --wrap=character --terminal-width={width}"
     )
     if shutil.which("bat"):
         return f"bat {bat_options} {field_placeholder}"
@@ -63,7 +63,6 @@ def preview_markdown_command(field_placeholder: str = "{5}") -> str:
         return f"glow --style dark {field_placeholder}"
     command = "type" if os.name == "nt" else "cat"
     return f"{command} {field_placeholder}"
-
 
 
 def preview_command() -> str:
@@ -137,7 +136,7 @@ def parse_skill_meta(skill_dir: Path) -> tuple[str, str, Optional[float | str]]:
         value = value.strip()
         if value in ("|", ">", "|-", ">-", "|+", ">+"):
             continuation = []
-            for next_line in lines[index + 1:]:
+            for next_line in lines[index + 1 :]:
                 if next_line and not next_line[:1].isspace():
                     break
                 continuation.append(next_line.strip())
@@ -153,6 +152,7 @@ def parse_skill_meta(skill_dir: Path) -> tuple[str, str, Optional[float | str]]:
     if needs_yaml:
         try:
             import yaml
+
             values = yaml.safe_load(block)
         except Exception:
             return name, description, updated_at
@@ -222,16 +222,18 @@ def rows_for(preset: str, skills: dict, scope: str = "preset") -> list:
     rows = []
     for folder, path in sorted(skills.items()):
         name, description, updated_at = skill_meta(path)
-        rows.append({
-            "skill": folder,
-            "preset": preset,
-            "scope": scope,
-            "location": preset if scope == "preset" else format_global_location(preset),
-            "name": name,
-            "description": description,
-            "updated_at": updated_at,
-            "path": str(path),
-        })
+        rows.append(
+            {
+                "skill": folder,
+                "preset": preset,
+                "scope": scope,
+                "location": preset if scope == "preset" else format_global_location(preset),
+                "name": name,
+                "description": description,
+                "updated_at": updated_at,
+                "path": str(path),
+            }
+        )
     _save_metadata_cache()
     return rows
 
@@ -264,6 +266,7 @@ def pick(rows: list, header: Optional[str] = None, action: str = "apply", query:
         print_warn("fzf could not run here; falling back to a numbered list.")
 
     from skill_ctl.prompts import prompt_skills
+
     labels = [f"{row.get('location', row['preset'])}/{row['skill']}" for row in rows]
     chosen_labels = set(prompt_skills(labels, action=action))
     return [row for row, label in zip(rows, labels) if label in chosen_labels]
@@ -282,13 +285,15 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
     reset = colors["reset"]
     dim = colors.get("updated", colors.get("description", "\x1b[2m"))
     lines = [
-        "\t".join((
-            f"{colors['name']}{truncate(row['skill'], PICK_NAME_WIDTH):<{PICK_NAME_WIDTH}}{reset}",
-            f"{colors['location']}{truncate(row.get('location') or row.get('preset', ''), PICK_LOCATION_WIDTH):<{PICK_LOCATION_WIDTH}}{reset}",
-            f"{dim}{truncate(format_relative_time(row.get('updated_at'), short=True) or '-', PICK_UPDATED_WIDTH):<{PICK_UPDATED_WIDTH}}{reset}",
-            f"{colors['description']}{truncate(row['description'], PICK_DESC_LIMIT)}{reset}",
-            row["path"],
-        ))
+        "\t".join(
+            (
+                f"{colors['name']}{truncate(row['skill'], PICK_NAME_WIDTH):<{PICK_NAME_WIDTH}}{reset}",
+                f"{colors['location']}{truncate(row.get('location') or row.get('preset', ''), PICK_LOCATION_WIDTH):<{PICK_LOCATION_WIDTH}}{reset}",
+                f"{dim}{truncate(format_relative_time(row.get('updated_at'), short=True) or '-', PICK_UPDATED_WIDTH):<{PICK_UPDATED_WIDTH}}{reset}",
+                f"{colors['description']}{truncate(row['description'], PICK_DESC_LIMIT)}{reset}",
+                row["path"],
+            )
+        )
         for row in rows
     ]
     with tempfile.TemporaryDirectory(prefix="skctl-picker-") as temporary:
@@ -300,31 +305,59 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
         )
         result = subprocess.run(
             [
-                "fzf", "--multi", "--ansi", "--no-sort", "--no-hscroll", "--tabstop", "2", "--query", query,
-                "--delimiter", "\t", "--with-nth", "1,2,3,4", "--nth", "1..4",
-                "--id-nth", "5",
-                "--header", header or DEFAULT_HEADER,
-                "--color", fzf_color_arg(load_config().get("theme")),
-                "--expect", "alt-p,alt-g,alt-x,alt-a",
-                "--bind", f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                "fzf",
+                "--multi",
+                "--ansi",
+                "--no-sort",
+                "--no-hscroll",
+                "--tabstop",
+                "2",
+                "--query",
+                query,
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "1,2,3,4",
+                "--nth",
+                "1..4",
+                "--id-nth",
+                "5",
+                "--header",
+                header or DEFAULT_HEADER,
+                "--color",
+                fzf_color_arg(load_config().get("theme")),
+                "--expect",
+                "alt-p,alt-g,alt-x,alt-a",
+                "--bind",
+                f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
                 # Restore selected paths against every row before filtering again.
-                "--bind", f"change:disable-search+reload-sync({reload_rows})",
-                "--bind", "load:enable-search",
-                "--preview", preview_command(),
-                "--preview-window", preview_window_options(),
+                "--bind",
+                f"change:disable-search+reload-sync({reload_rows})",
+                "--bind",
+                "load:enable-search",
+                "--preview",
+                preview_command(),
+                "--preview-window",
+                preview_window_options(),
             ],
-            input="\n".join(prioritize_names(lines, query)), stdout=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace",
+            input="\n".join(prioritize_names(lines, query)),
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     if result.returncode >= 2 and result.returncode != 130:
         return [], False
     output_lines = result.stdout.splitlines()
-    action = output_lines.pop(0) if output_lines and output_lines[0] in ("alt-p", "alt-g", "alt-x", "alt-a") else None
+    action = (
+        output_lines.pop(0)
+        if output_lines and output_lines[0] in ("alt-p", "alt-g", "alt-x", "alt-a")
+        else None
+    )
     if output_lines and not output_lines[0]:
         output_lines.pop(0)
     picked = {
-        line.split("\t")[4] for line in output_lines
-        if line.strip() and len(line.split("\t")) >= 5
+        line.split("\t")[4] for line in output_lines if line.strip() and len(line.split("\t")) >= 5
     }
     chosen = []
     for row in rows:

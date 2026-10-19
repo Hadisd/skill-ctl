@@ -112,15 +112,17 @@ def scan_installed_skills(
         else:
             agents_display = agent_list
 
-        results.append({
-            "name": name,
-            "path": data["path"],
-            "scope": data["scope"],
-            "agents": agents_display,
-            "source": data["source"],
-            "sourceUrl": data["sourceUrl"],
-            "sourceType": data["sourceType"],
-        })
+        results.append(
+            {
+                "name": name,
+                "path": data["path"],
+                "scope": data["scope"],
+                "agents": agents_display,
+                "source": data["source"],
+                "sourceUrl": data["sourceUrl"],
+                "sourceType": data["sourceType"],
+            }
+        )
     return results
 
 

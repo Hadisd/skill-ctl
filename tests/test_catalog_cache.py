@@ -39,7 +39,9 @@ def test_search_persists_to_disk_and_hits_cache(monkeypatch):
 
     def mock_get_json(url, timeout=10):
         calls.append(url)
-        return {"skills": [{"name": "fast-skill", "source": "owner/repo", "installs": 50, "id": "1"}]}
+        return {
+            "skills": [{"name": "fast-skill", "source": "owner/repo", "installs": 50, "id": "1"}]
+        }
 
     # Force using cache with standard function pointer
     monkeypatch.setattr(catalog, "_DEFAULT_GET_JSON", mock_get_json)
@@ -148,7 +150,9 @@ def test_choose_with_fzf_preloads_initial_rows(tmp_path, monkeypatch):
         return DummyResult()
 
     monkeypatch.setattr(catalog.subprocess, "run", mock_run)
-    monkeypatch.setattr(catalog, "write_rows", lambda q, c, o, remotes=None: ["row1\tpath1", "row2\tpath2"])
+    monkeypatch.setattr(
+        catalog, "write_rows", lambda q, c, o, remotes=None: ["row1\tpath1", "row2\tpath2"]
+    )
 
     # Query with >= 3 chars
     catalog.choose_with_fzf("react")
@@ -172,6 +176,7 @@ def test_prune_cache_evicts_old_and_excess_files(tmp_path, monkeypatch):
     old_file.write_text("{}", encoding="utf-8")
     old_time = time.time() - (8 * 86400)
     import os
+
     os.utime(old_file, (old_time, old_time))
 
     # 2. Create fresh files
@@ -228,4 +233,3 @@ def test_get_github_token_from_gh_cli(monkeypatch):
     token = catalog.get_github_token()
     assert token == "gh_auth_token_789"
     assert catalog._GH_TOKEN_CACHE == "gh_auth_token_789"
-

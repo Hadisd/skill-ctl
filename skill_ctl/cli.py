@@ -50,7 +50,6 @@ _LAZY_EXPORTS = {
 }
 
 
-
 def __getattr__(name: str):
     if name in _LAZY_EXPORTS:
         mod_name, func_name = _LAZY_EXPORTS[name]
@@ -77,31 +76,40 @@ SUBCOMMAND_EXPANSIONS = {"restore": ["backup", "pull"]}
 PASTE_NOISE = ("npx", "skills", "add")
 
 ROOT_COMMAND_GROUPS = (
-    ("Preset workflow", (
-        ("add", "Install a skill into a preset, project, or global folders"),
-        ("apply", "Link a preset into the current project"),
-        ("unapply", "Remove a preset's links from the current project"),
-        ("diff", "Show differences between project skills and a preset"),
-        ("presets", "Browse and manage presets"),
-    )),
-    ("Skills", (
-        ("search", "Search and install skills locally or from skills.sh"),
-        ("list", "List installed skills"),
-        ("info", "Show details and installation status of a skill"),
-        ("remove", "Remove an installed skill"),
-        ("update", "Update installed skills"),
-    )),
-    ("Setup", (
-        ("status", "Show presets applied to a project"),
-        ("config", "View and edit configuration"),
-        ("theme", "View or change the color theme"),
-        ("backup", "Back up or restore presets"),
-        ("sync", "Sync presets between devices"),
-        ("doctor", "Find broken skill links"),
-        ("completion", "Print shell completion code"),
-        ("self-update", "Check for and install a new skctl release"),
-        ("version", "Print the installed skctl version"),
-    )),
+    (
+        "Preset workflow",
+        (
+            ("add", "Install a skill into a preset, project, or global folders"),
+            ("apply", "Link a preset into the current project"),
+            ("unapply", "Remove a preset's links from the current project"),
+            ("diff", "Show differences between project skills and a preset"),
+            ("presets", "Browse and manage presets"),
+        ),
+    ),
+    (
+        "Skills",
+        (
+            ("search", "Search and install skills locally or from skills.sh"),
+            ("list", "List installed skills"),
+            ("info", "Show details and installation status of a skill"),
+            ("remove", "Remove an installed skill"),
+            ("update", "Update installed skills"),
+        ),
+    ),
+    (
+        "Setup",
+        (
+            ("status", "Show presets applied to a project"),
+            ("config", "View and edit configuration"),
+            ("theme", "View or change the color theme"),
+            ("backup", "Back up or restore presets"),
+            ("sync", "Sync presets between devices"),
+            ("doctor", "Find broken skill links"),
+            ("completion", "Print shell completion code"),
+            ("self-update", "Check for and install a new skctl release"),
+            ("version", "Print the installed skctl version"),
+        ),
+    ),
 )
 
 PRESET_ACTION_USAGE = {
@@ -129,9 +137,12 @@ def print_usage(line: str) -> None:
     from rich.text import Text
 
     wrapped = textwrap.wrap(
-        f"Usage: {line}", width=max(console.width - 2, 20),
-        initial_indent=" ", subsequent_indent=" " * 8,
-        break_long_words=False, break_on_hyphens=False,
+        f"Usage: {line}",
+        width=max(console.width - 2, 20),
+        initial_indent=" ",
+        subsequent_indent=" " * 8,
+        break_long_words=False,
+        break_on_hyphens=False,
     )
     text = Text("\n".join(wrapped))
     text.stylize("bold", 1, 7)
@@ -147,8 +158,16 @@ def print_help_panel(title: str, lines: list[str]) -> None:
     from rich.box import ROUNDED
     from rich.panel import Panel
 
-    console.print(Panel("\n".join(lines), title=title, title_align="left",
-                        border_style="header", box=ROUNDED, padding=(0, 1)))
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=title,
+            title_align="left",
+            border_style="header",
+            box=ROUNDED,
+            padding=(0, 1),
+        )
+    )
 
 
 def print_preset_help(action: str = "") -> None:
@@ -161,8 +180,9 @@ def print_preset_help(action: str = "") -> None:
             return
     print_usage("skctl presets <action> [arguments]")
     console.print()
-    actions = [escape(usage.removeprefix("skctl presets "))
-               for usage in PRESET_ACTION_USAGE.values()]
+    actions = [
+        escape(usage.removeprefix("skctl presets ")) for usage in PRESET_ACTION_USAGE.values()
+    ]
     print_help_panel("Actions", actions + ["list | applied | browse"])
 
 
@@ -174,7 +194,9 @@ def split_pasted_command(command: str) -> list[str]:
     lexer.whitespace_split = True
     lexer.commenters = ""
     import builtins
+
     return builtins.list(lexer)
+
 
 def preprocess_args(args: list[str]) -> list[str]:
     """Cleans up args if someone pasted a raw 'npx skills add ...' command from skills.sh."""
@@ -219,6 +241,7 @@ def preprocess_args(args: list[str]) -> list[str]:
 
     return result
 
+
 def print_project_context() -> None:
     """Print project context: project directory, detected agents, and applied presets."""
     cwd = Path.cwd()
@@ -258,7 +281,10 @@ def print_status_summary() -> None:
         ("Codex (.codex)", [cwd / ".codex"]),
         ("Cline (.cline)", [cwd / ".cline"]),
         ("Gemini (.gemini)", [cwd / ".gemini"]),
-        ("GitHub Copilot (.github)", [cwd / ".github" / "copilot", cwd / ".github" / "copilot-instructions.md"]),
+        (
+            "GitHub Copilot (.github)",
+            [cwd / ".github" / "copilot", cwd / ".github" / "copilot-instructions.md"],
+        ),
         ("Goose (.goose)", [cwd / ".goose"]),
     ]
 
@@ -280,7 +306,10 @@ def print_status_summary() -> None:
         pass
 
     from skill_ctl.skillscan import get_preset_skills
-    preset_dirs = sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir()) if PRESETS_DIR.is_dir() else []
+
+    preset_dirs = (
+        sorted(d for d in PRESETS_DIR.iterdir() if d.is_dir()) if PRESETS_DIR.is_dir() else []
+    )
     skill_count = sum(len(get_preset_skills(d)) for d in preset_dirs)
 
     console.print()
@@ -299,18 +328,23 @@ def print_root_help() -> None:
     print_usage("skctl <COMMAND>")
     console.print()
     for group, commands in ROOT_COMMAND_GROUPS:
-        print_help_panel(group, [f"[header]{name:<12}[/header] {description}"
-                                 for name, description in commands])
-    print_help_panel("Examples", [
-        "skctl add owner/repo --preset writing",
-        "skctl apply writing",
-    ])
+        print_help_panel(
+            group, [f"[header]{name:<12}[/header] {description}" for name, description in commands]
+        )
+    print_help_panel(
+        "Examples",
+        [
+            "skctl add owner/repo --preset writing",
+            "skctl apply writing",
+        ],
+    )
     console.print("[dim]Run `skctl <command> --help` for command options.[/dim]")
     if not shutil.which("fzf"):
         console.print("[dim]Tip: install fzf for interactive selection.[/dim]")
     if not (shutil.which("bat") or shutil.which("batcat")):
         console.print("[dim]Tip: install bat for richer previews.[/dim]")
     print_status_summary()
+
 
 def run_app(app, args: list[str], prog_name: str) -> None:
     """Invoke a Typer app, returning on success instead of exiting.
@@ -340,6 +374,7 @@ def main() -> None:
         # Answered locally, before config or theme setup: it must work in a
         # broken install, and it is what a bug report asks for first.
         from skill_ctl import __version__
+
         print(f"skctl {__version__}")
         return
     dry_run = cleaned_args[:1] in (["apply"], ["sync"]) and "--dry-run" in cleaned_args
@@ -364,6 +399,7 @@ def main() -> None:
         module = __import__(mod_name, fromlist=[func_name])
         func = getattr(module, func_name)
         import typer
+
         app = typer.Typer(add_completion=False)
         app.command(cmd_name)(func)
         run_app(app, cleaned_args[1:], f"skctl {cmd_name}")
@@ -382,6 +418,7 @@ def main() -> None:
     for cmd_name, func in get_all_commands().items():
         app.command(cmd_name)(func)
     run_app(app, cleaned_args, "skctl")
+
 
 if __name__ == "__main__":
     main()

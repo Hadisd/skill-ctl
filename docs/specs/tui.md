@@ -207,10 +207,13 @@ Add a first-class `tui` subcommand to `cli.py`, and allow running bare `skctl` w
 ```python
 @app.command(name="tui")
 def tui_command(
-    project: Optional[str] = typer.Option(None, "--project", "-p", help="Initial project directory.")
+    project: Optional[str] = typer.Option(
+        None, "--project", "-p", help="Initial project directory."
+    ),
 ) -> None:
     """Launch the interactive Terminal User Interface."""
     from skill_ctl.tui import launch_tui
+
     launch_tui(project=project)
 ```
 

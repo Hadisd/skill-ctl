@@ -1,6 +1,5 @@
 """Search skills across presets, global folders, and the remote skills.sh catalog."""
 
-
 import json as jsonlib
 import os
 import shutil
@@ -86,7 +85,10 @@ def collect(preset: Optional[str], global_only: bool = False) -> list:
     elif PRESETS_DIR.is_dir():
         try:
             with os.scandir(PRESETS_DIR) as entries:
-                preset_dirs = sorted([Path(e.path) for e in entries if e.is_dir() and not e.name.startswith(".")], key=lambda p: p.name)
+                preset_dirs = sorted(
+                    [Path(e.path) for e in entries if e.is_dir() and not e.name.startswith(".")],
+                    key=lambda p: p.name,
+                )
         except OSError:
             preset_dirs = []
     else:
@@ -121,55 +123,67 @@ def apply_picked(chosen: list, project: Optional[str]) -> None:
 
 
 def search(
-    query: Annotated[Optional[str], typer.Argument(help="Search term (skill name, keyword, or description).")] = None,
+    query: Annotated[
+        Optional[str], typer.Argument(help="Search term (skill name, keyword, or description).")
+    ] = None,
     preset: Annotated[
         Optional[str],
-        typer.Option("--preset", "-P", help="Filter by preset, or install picked skills into this preset.")
+        typer.Option(
+            "--preset", "-P", help="Filter by preset, or install picked skills into this preset."
+        ),
     ] = None,
     project: Annotated[
         Optional[str],
-        typer.Option("--project", "-p", help="Project to check against for what is applied (default: current directory).")
+        typer.Option(
+            "--project",
+            "-p",
+            help="Project to check against for what is applied (default: current directory).",
+        ),
     ] = None,
     applied: Annotated[
-        bool,
-        typer.Option("--applied", help="Only skills already applied to the project.")
+        bool, typer.Option("--applied", help="Only skills already applied to the project.")
     ] = False,
     global_only: Annotated[
         bool,
-        typer.Option("--global", "-g", help="Search only configured global skill folders (or install globally).")
+        typer.Option(
+            "--global",
+            "-g",
+            help="Search only configured global skill folders (or install globally).",
+        ),
     ] = False,
     local_only: Annotated[
-        bool,
-        typer.Option("--local", "-l", help="Only search local presets and global folders.")
+        bool, typer.Option("--local", "-l", help="Only search local presets and global folders.")
     ] = False,
     remote: Annotated[
         Optional[str],
-        typer.Option("--remote", "-r", help="Search remote catalogs (e.g. skills.sh, skillsmp, or all).")
+        typer.Option(
+            "--remote", "-r", help="Search remote catalogs (e.g. skills.sh, skillsmp, or all)."
+        ),
     ] = None,
     limit: Annotated[
         Optional[int],
-        typer.Option("--limit", "-L", help="Maximum remote search results to fetch (default: search_limit in config, or 50).")
+        typer.Option(
+            "--limit",
+            "-L",
+            help="Maximum remote search results to fetch (default: search_limit in config, or 50).",
+        ),
     ] = None,
     owner: Annotated[
         Optional[str],
-        typer.Option("--owner", help="Search only repositories from a GitHub owner (remote catalog).")
+        typer.Option(
+            "--owner", help="Search only repositories from a GitHub owner (remote catalog)."
+        ),
     ] = None,
     npx: Annotated[
-        bool,
-        typer.Option("--npx", help="Use npx skills' own interactive finder.")
+        bool, typer.Option("--npx", help="Use npx skills' own interactive finder.")
     ] = False,
     json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output as JSON, with descriptions in full.")
+        bool, typer.Option("--json", help="Output as JSON, with descriptions in full.")
     ] = False,
     pick_and_apply: Annotated[
-        bool,
-        typer.Option("--pick", "-i", help="Deprecated; search is already interactive.")
+        bool, typer.Option("--pick", "-i", help="Deprecated; search is already interactive.")
     ] = False,
-    remote_only: Annotated[
-        Optional[bool],
-        typer.Option(hidden=True)
-    ] = None,
+    remote_only: Annotated[Optional[bool], typer.Option(hidden=True)] = None,
 ) -> None:
     """Search installed preset, global, and remote skills (skills.sh, skillsmp.com).
 
@@ -197,7 +211,10 @@ def search(
         catalog_kwargs = {"limit": limit} if limit is not None else {}
         if json_output:
             from skill_ctl.catalog import search as catalog_search
-            results = catalog_search(query or "", owner=owner, remotes=remotes_filter, **catalog_kwargs)
+
+            results = catalog_search(
+                query or "", owner=owner, remotes=remotes_filter, **catalog_kwargs
+            )
             print(jsonlib.dumps(results, indent=2))
             return
 
@@ -213,12 +230,16 @@ def search(
 
         while True:
             if not cart:
-                selected = choose_catalog_skill(current_query, owner, remotes=remotes_filter, **catalog_kwargs)
+                selected = choose_catalog_skill(
+                    current_query, owner, remotes=remotes_filter, **catalog_kwargs
+                )
                 if not selected or not inspect_catalog_skill(selected):
                     return
                 for item in selected:
                     key = (item.get("source") or item.get("id"), item.get("name"))
-                    if not any((c.get("source") or c.get("id"), c.get("name")) == key for c in cart):
+                    if not any(
+                        (c.get("source") or c.get("id"), c.get("name")) == key for c in cart
+                    ):
                         cart.append(item)
 
             action = cart[0].get("_action") if cart else None
@@ -227,12 +248,21 @@ def search(
             is_project = bool(project)
 
             names_list = [c.get("name", "") for c in cart if c.get("name")]
-            summary_str = ", ".join(names_list) if len(names_list) <= 3 else f"{len(names_list)} skills ({', '.join(names_list[:3])}...)"
+            summary_str = (
+                ", ".join(names_list)
+                if len(names_list) <= 3
+                else f"{len(names_list)} skills ({', '.join(names_list[:3])}...)"
+            )
 
             if action == "alt-p" and not target_preset:
                 from skill_ctl.constants import PRESETS_DIR
                 from skill_ctl.prompts import prompt_preset_or_new
-                names = sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir()) if PRESETS_DIR.is_dir() else []
+
+                names = (
+                    sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir())
+                    if PRESETS_DIR.is_dir()
+                    else []
+                )
                 config = load_config()
                 default_p = config.get("default_preset", "default")
                 target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR, allow_back=True)
@@ -252,6 +282,7 @@ def search(
                 if should_prompt and sys.stdin.isatty():
                     from skill_ctl.constants import PRESETS_DIR
                     from skill_ctl.prompts import prompt_destination
+
                     dest_res = prompt_destination(
                         PRESETS_DIR,
                         default_preset=default_p,
@@ -266,17 +297,26 @@ def search(
                         continue
                     if target_preset == "add_more":
                         from rich.prompt import Prompt
+
                         try:
-                            more_q = Prompt.ask("[bold]Enter search term to add more skills[/bold] (leave blank to browse)", console=console).strip()
+                            more_q = Prompt.ask(
+                                "[bold]Enter search term to add more skills[/bold] (leave blank to browse)",
+                                console=console,
+                            ).strip()
                         except (EOFError, KeyboardInterrupt):
                             console.print()
                             return
                         current_query = more_q
-                        more_selected = choose_catalog_skill(current_query, owner, remotes=remotes_filter, **catalog_kwargs)
+                        more_selected = choose_catalog_skill(
+                            current_query, owner, remotes=remotes_filter, **catalog_kwargs
+                        )
                         if more_selected and inspect_catalog_skill(more_selected):
                             for item in more_selected:
                                 key = (item.get("source") or item.get("id"), item.get("name"))
-                                if not any((c.get("source") or c.get("id"), c.get("name")) == key for c in cart):
+                                if not any(
+                                    (c.get("source") or c.get("id"), c.get("name")) == key
+                                    for c in cart
+                                ):
                                     cart.append(item)
                         continue
                     if not is_project and not target_preset and not is_global:
@@ -297,14 +337,19 @@ def search(
             source = str(skill.get("source") or skill.get("id", ""))
             name = str(skill.get("name", ""))
             if source:
-                by_source.setdefault(source, []).append("*" if skill.get("_all_from_source") else name)
+                by_source.setdefault(source, []).append(
+                    "*" if skill.get("_all_from_source") else name
+                )
         if not by_source:
             print_error("The selected remote results have no installable source.")
             sys.exit(1)
 
         if is_global and sys.stdin.isatty():
             from rich.prompt import Confirm
-            all_names = [n for names in by_source.values() for n in names if n != "*"] or [s.get("name", "") for s in selected]
+
+            all_names = [n for names in by_source.values() for n in names if n != "*"] or [
+                s.get("name", "") for s in selected
+            ]
             names_str = ", ".join(all_names)
             prompt_msg = f"Install {len(all_names)} remote skill{'s' if len(all_names) != 1 else ''} ({names_str}) globally (~/)?"
             try:
@@ -315,7 +360,15 @@ def search(
                 console.print()
                 return
 
-        target = ensure_preset_dir(target_preset) if target_preset else (Path.home() if is_global else (Path(project).expanduser().resolve() if project else Path.cwd()))
+        target = (
+            ensure_preset_dir(target_preset)
+            if target_preset
+            else (
+                Path.home()
+                if is_global
+                else (Path(project).expanduser().resolve() if project else Path.cwd())
+            )
+        )
         installed: list[str] = []
         exit_code = 0
         for source, names in by_source.items():
@@ -334,9 +387,13 @@ def search(
                 exit_code = code
         if installed and target_preset:
             maybe_auto_push(f"add {', '.join(installed)} to {target_preset}")
-            print_success(f"Added {len(installed)} skill{'s' if len(installed) != 1 else ''} to preset '{target_preset}'.")
+            print_success(
+                f"Added {len(installed)} skill{'s' if len(installed) != 1 else ''} to preset '{target_preset}'."
+            )
         elif installed and is_global:
-            print_success(f"Installed {len(installed)} skill{'s' if len(installed) != 1 else ''} globally.")
+            print_success(
+                f"Installed {len(installed)} skill{'s' if len(installed) != 1 else ''} globally."
+            )
         if exit_code != 0:
             sys.exit(exit_code)
         return
@@ -371,9 +428,17 @@ def search(
         return
 
     if not local_rows:
-        where = "global folders" if global_only else (f"preset '{preset}'" if preset else "your presets and global folders")
-        print_warn(f"Nothing in {where} matches {query!r}." if terms else f"No skills in {where} yet.")
-        console.print("Search skills.sh for new ones with: [header]skctl search --remote <query>[/header]")
+        where = (
+            "global folders"
+            if global_only
+            else (f"preset '{preset}'" if preset else "your presets and global folders")
+        )
+        print_warn(
+            f"Nothing in {where} matches {query!r}." if terms else f"No skills in {where} yet."
+        )
+        console.print(
+            "Search skills.sh for new ones with: [header]skctl search --remote <query>[/header]"
+        )
         return
 
     if not sys.stdin.isatty() and not pick_and_apply:
@@ -394,6 +459,7 @@ def search(
 
     if action == "alt-x":
         from rich.prompt import Confirm
+
         names = [r["skill"] for r in chosen]
         names_str = ", ".join(names)
         prompt_msg = f"Delete {len(chosen)} skill{'s' if len(chosen) != 1 else ''} ({names_str})?"
@@ -429,7 +495,9 @@ def search(
 
         if deleted_count:
             print_success(f"Deleted {deleted_count} skill{'s' if deleted_count != 1 else ''}.")
-            presets_affected = {r.get("preset") for r in chosen if r.get("scope") == "preset" and r.get("preset")}
+            presets_affected = {
+                r.get("preset") for r in chosen if r.get("scope") == "preset" and r.get("preset")
+            }
             for p_name in presets_affected:
                 maybe_auto_push(f"delete skills from {p_name}")
         return
@@ -439,7 +507,12 @@ def search(
         if not target_preset:
             from skill_ctl.constants import PRESETS_DIR
             from skill_ctl.prompts import prompt_preset_or_new
-            names = sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir()) if PRESETS_DIR.is_dir() else []
+
+            names = (
+                sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir())
+                if PRESETS_DIR.is_dir()
+                else []
+            )
             config = load_config()
             default_p = config.get("default_preset", "default")
             target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR)
@@ -448,6 +521,7 @@ def search(
                 return
 
         from skill_ctl.presets import install_skills_into_preset
+
         target_dir = ensure_preset_dir(target_preset)
         added = install_skills_into_preset(target_preset, target_dir, chosen)
         if added:
@@ -457,6 +531,7 @@ def search(
     elif action == "alt-a":
         from skill_ctl.constants import PRESETS_DIR
         from skill_ctl.prompts import prompt_destination
+
         config = load_config()
         default_p = config.get("default_preset", "default")
         dest_preset, is_project, is_global_dest = prompt_destination(
@@ -468,6 +543,7 @@ def search(
             add_installed_to_global(config, skill=",".join(r["skill"] for r in chosen))
         elif dest_preset:
             from skill_ctl.presets import install_skills_into_preset
+
             target_dir = ensure_preset_dir(dest_preset)
             added = install_skills_into_preset(dest_preset, target_dir, chosen)
             if added:

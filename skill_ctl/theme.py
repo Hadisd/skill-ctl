@@ -42,13 +42,13 @@ THEMES: dict[str, dict[str, str]] = {
         "path": "bright_green",
     },
     "light": {
-        "header": "bold #8839ef",   # mauve (Catppuccin Latte)
-        "accent": "#1e66f5",        # blue
-        "choice": "bold #209fb5",   # sapphire
+        "header": "bold #8839ef",  # mauve (Catppuccin Latte)
+        "accent": "#1e66f5",  # blue
+        "choice": "bold #209fb5",  # sapphire
         "success": "bold #40a02b",  # green
-        "warn": "bold #df8e1d",     # yellow
-        "error": "bold #d20f39",    # red
-        "path": "#179299",          # teal
+        "warn": "bold #df8e1d",  # yellow
+        "error": "bold #d20f39",  # red
+        "path": "#179299",  # teal
     },
     "mono": {
         "header": "bold",
@@ -60,67 +60,67 @@ THEMES: dict[str, dict[str, str]] = {
         "path": "italic",
     },
     "catppuccin": {
-        "header": "bold #cba6f7",   # mauve (Mocha)
-        "accent": "#89b4fa",        # blue
-        "choice": "bold #74c7ec",   # sapphire
+        "header": "bold #cba6f7",  # mauve (Mocha)
+        "accent": "#89b4fa",  # blue
+        "choice": "bold #74c7ec",  # sapphire
         "success": "bold #a6e3a1",  # green
-        "warn": "bold #f9e2af",     # yellow
-        "error": "bold #f38ba8",    # red
-        "path": "#94e2d5",          # teal
+        "warn": "bold #f9e2af",  # yellow
+        "error": "bold #f38ba8",  # red
+        "path": "#94e2d5",  # teal
     },
     "catppuccin-mocha": {
-        "header": "bold #cba6f7",   # mauve
-        "accent": "#89b4fa",        # blue
-        "choice": "bold #74c7ec",   # sapphire
+        "header": "bold #cba6f7",  # mauve
+        "accent": "#89b4fa",  # blue
+        "choice": "bold #74c7ec",  # sapphire
         "success": "bold #a6e3a1",  # green
-        "warn": "bold #f9e2af",     # yellow
-        "error": "bold #f38ba8",    # red
-        "path": "#94e2d5",          # teal
+        "warn": "bold #f9e2af",  # yellow
+        "error": "bold #f38ba8",  # red
+        "path": "#94e2d5",  # teal
     },
     "catppuccin-macchiato": {
-        "header": "bold #c6a0f6",   # mauve
-        "accent": "#8aadf4",        # blue
-        "choice": "bold #7dc4e4",   # sapphire
+        "header": "bold #c6a0f6",  # mauve
+        "accent": "#8aadf4",  # blue
+        "choice": "bold #7dc4e4",  # sapphire
         "success": "bold #a6da95",  # green
-        "warn": "bold #eed49f",     # yellow
-        "error": "bold #ed8796",    # red
-        "path": "#8bd5ca",          # teal
+        "warn": "bold #eed49f",  # yellow
+        "error": "bold #ed8796",  # red
+        "path": "#8bd5ca",  # teal
     },
     "catppuccin-frappe": {
-        "header": "bold #ca9ee6",   # mauve
-        "accent": "#8caaee",        # blue
-        "choice": "bold #85c1dc",   # sapphire
+        "header": "bold #ca9ee6",  # mauve
+        "accent": "#8caaee",  # blue
+        "choice": "bold #85c1dc",  # sapphire
         "success": "bold #a6d189",  # green
-        "warn": "bold #e5c890",     # yellow
-        "error": "bold #e78284",    # red
-        "path": "#81c8be",          # teal
+        "warn": "bold #e5c890",  # yellow
+        "error": "bold #e78284",  # red
+        "path": "#81c8be",  # teal
     },
     "catppuccin-latte": {
-        "header": "bold #8839ef",   # mauve
-        "accent": "#1e66f5",        # blue
-        "choice": "bold #209fb5",   # sapphire
+        "header": "bold #8839ef",  # mauve
+        "accent": "#1e66f5",  # blue
+        "choice": "bold #209fb5",  # sapphire
         "success": "bold #40a02b",  # green
-        "warn": "bold #df8e1d",     # yellow
-        "error": "bold #d20f39",    # red
-        "path": "#179299",          # teal
+        "warn": "bold #df8e1d",  # yellow
+        "error": "bold #d20f39",  # red
+        "path": "#179299",  # teal
     },
     "tokyo-night": {
-        "header": "bold #bb9af7",   # purple
-        "accent": "#7aa2f7",        # blue
-        "choice": "bold #7dcfff",   # cyan
+        "header": "bold #bb9af7",  # purple
+        "accent": "#7aa2f7",  # blue
+        "choice": "bold #7dcfff",  # cyan
         "success": "bold #9ece6a",  # green
-        "warn": "bold #e0af68",     # yellow
-        "error": "bold #f7768e",    # red
-        "path": "#73daca",         # teal
+        "warn": "bold #e0af68",  # yellow
+        "error": "bold #f7768e",  # red
+        "path": "#73daca",  # teal
     },
     "gruvbox": {
-        "header": "bold #d3869b",   # purple
-        "accent": "#83a598",        # blue
-        "choice": "bold #8ec07c",   # aqua
+        "header": "bold #d3869b",  # purple
+        "accent": "#83a598",  # blue
+        "choice": "bold #8ec07c",  # aqua
         "success": "bold #b8bb26",  # green
-        "warn": "bold #fabd2f",     # yellow
-        "error": "bold #fb4934",    # red
-        "path": "#fe8019",          # orange
+        "warn": "bold #fabd2f",  # yellow
+        "error": "bold #fb4934",  # red
+        "path": "#fe8019",  # orange
     },
 }
 

@@ -39,9 +39,17 @@ def check_sync_state() -> None:
         print_error(f"Sync requires the '{BRANCH}' branch; the backup is on '{branch}'.")
         raise SystemExit(1)
     git_dir = Path(checked_git(["rev-parse", "--absolute-git-dir"]).stdout.strip())
-    pending = any((git_dir / name).exists() for name in (
-        "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer",
-    ))
+    pending = any(
+        (git_dir / name).exists()
+        for name in (
+            "MERGE_HEAD",
+            "CHERRY_PICK_HEAD",
+            "REVERT_HEAD",
+            "rebase-merge",
+            "rebase-apply",
+            "sequencer",
+        )
+    )
     unmerged = checked_git(["diff", "--name-only", "--diff-filter=U"]).stdout.strip()
     if pending or unmerged:
         print_error("Finish or abort the Git operation in the backup repository before syncing.")
@@ -52,12 +60,18 @@ def check_sync_state() -> None:
 def check_remote_files() -> None:
     """Never bring a legacy backup's machine-specific files onto this device."""
     paths = checked_git(["ls-tree", "-rz", "--name-only", REMOTE_BRANCH]).stdout.split("\0")
-    excluded = [path for path in paths if path and path != ".gitignore" and not path.startswith("presets/")]
+    excluded = [
+        path for path in paths if path and path != ".gitignore" and not path.startswith("presets/")
+    ]
     if excluded:
-        print_error("The backup contains files outside presets; sync keeps machine-specific files local.")
+        print_error(
+            "The backup contains files outside presets; sync keeps machine-specific files local."
+        )
         for path in excluded:
             console.print(f"  {path}", markup=False)
-        print_warn("Remove those files from the backup, or use backup pull to restore it explicitly.")
+        print_warn(
+            "Remove those files from the backup, or use backup pull to restore it explicitly."
+        )
         raise SystemExit(1)
 
 
@@ -76,9 +90,14 @@ def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
         console.print("Sync will bring in the remote presets and merge any local presets.")
         incoming = checked_git(["ls-tree", "-r", "--name-only", REMOTE_BRANCH]).stdout
     else:
-        behind, ahead = checked_git([
-            "rev-list", "--left-right", "--count", f"{REMOTE_BRANCH}...HEAD",
-        ]).stdout.split()
+        behind, ahead = checked_git(
+            [
+                "rev-list",
+                "--left-right",
+                "--count",
+                f"{REMOTE_BRANCH}...HEAD",
+            ]
+        ).stdout.split()
         console.print(f"{behind} incoming commit(s), {ahead} outgoing commit(s).")
         if behind == ahead == "0" and not dirty:
             print_success("Presets are in sync.")
@@ -87,12 +106,34 @@ def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
         if base.returncode not in (0, 1):
             console.print(base.stderr.rstrip(), markup=False)
             raise SystemExit(1)
-        incoming = checked_git([
-            "diff", "--name-status", base.stdout.strip() or "HEAD", REMOTE_BRANCH, "--", "presets",
-        ]).stdout if behind != "0" else ""
-        outgoing = checked_git([
-            "diff", "--name-status", base.stdout.strip() or REMOTE_BRANCH, "HEAD", "--", "presets",
-        ]).stdout if ahead != "0" else ""
+        incoming = (
+            checked_git(
+                [
+                    "diff",
+                    "--name-status",
+                    base.stdout.strip() or "HEAD",
+                    REMOTE_BRANCH,
+                    "--",
+                    "presets",
+                ]
+            ).stdout
+            if behind != "0"
+            else ""
+        )
+        outgoing = (
+            checked_git(
+                [
+                    "diff",
+                    "--name-status",
+                    base.stdout.strip() or REMOTE_BRANCH,
+                    "HEAD",
+                    "--",
+                    "presets",
+                ]
+            ).stdout
+            if ahead != "0"
+            else ""
+        )
         if outgoing.strip():
             console.print("Outgoing preset changes:")
             console.print(outgoing.rstrip(), markup=False)
@@ -100,13 +141,22 @@ def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
         console.print("Incoming files:")
         console.print(incoming.rstrip(), markup=False)
     if preview:
-        print_warn("Preview only. No presets, commits, or remote files changed; a merge may need conflict resolution.")
+        print_warn(
+            "Preview only. No presets, commits, or remote files changed; a merge may need conflict resolution."
+        )
 
 
 def merge_remote() -> None:
-    result = git([
-        "merge", "--no-edit", "--no-stat", "--allow-unrelated-histories", REMOTE_BRANCH,
-    ], capture=True)
+    result = git(
+        [
+            "merge",
+            "--no-edit",
+            "--no-stat",
+            "--allow-unrelated-histories",
+            REMOTE_BRANCH,
+        ],
+        capture=True,
+    )
     if result.returncode == 0:
         return
     conflicts = git(["diff", "--name-only", "--diff-filter=U"], capture=True).stdout.strip()
@@ -116,7 +166,9 @@ def merge_remote() -> None:
     if conflicts:
         console.print("Conflicting files:")
         console.print(conflicts, markup=False)
-        print_warn("The merge was aborted. Local changes remain committed; remote versions remain in origin/main.")
+        print_warn(
+            "The merge was aborted. Local changes remain committed; remote versions remain in origin/main."
+        )
         console.print(f"Resolve in {BASE_DIR}:", markup=False)
         console.print("  git merge --no-edit --allow-unrelated-histories origin/main", markup=False)
         console.print("  Edit the conflicts, then git add the resolved files and git commit.")
@@ -129,10 +181,17 @@ def merge_remote() -> None:
 def sync(
     action: Annotated[Literal["run", "status"], typer.Argument()] = "run",
     dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Fetch and preview incoming and outgoing changes without merging or pushing."),
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Fetch and preview incoming and outgoing changes without merging or pushing.",
+        ),
     ] = False,
     message: Annotated[
-        Optional[str], typer.Option("--message", "-m", help="Commit message for local changes (default: sync presets)."),
+        Optional[str],
+        typer.Option(
+            "--message", "-m", help="Commit message for local changes (default: sync presets)."
+        ),
     ] = None,
 ) -> None:
     """Sync presets between devices using the configured Git backup.
@@ -162,6 +221,8 @@ def sync(
         result = git(["push", "-u", "origin", BRANCH], capture=True)
         if result.returncode != 0:
             console.print((result.stderr or result.stdout).rstrip(), markup=False)
-            print_error("Push failed. Local commits are saved; run skctl sync again to fetch and retry.")
+            print_error(
+                "Push failed. Local commits are saved; run skctl sync again to fetch and retry."
+            )
             raise SystemExit(1)
         print_success("Presets synced.")

@@ -45,4 +45,3 @@ def preview_window_options() -> str:
     except OSError:
         pass
     return base
-

@@ -97,14 +97,27 @@ def _browse_preset_choices(
         preview_command = _preview_markdown_command("{3}")
         result = subprocess.run(
             [
-                "fzf", "--delimiter", "\t", "--with-nth", "2",
-                "--header", "↵ choose · Esc cancel · ^/ view",
-                "--color", fzf_color_arg(config.get("theme")),
-                "--bind", PREVIEW_TOGGLE_BIND,
-                "--preview", preview_command, "--preview-window", preview_window_options(),
+                "fzf",
+                "--delimiter",
+                "\t",
+                "--with-nth",
+                "2",
+                "--header",
+                "↵ choose · Esc cancel · ^/ view",
+                "--color",
+                fzf_color_arg(config.get("theme")),
+                "--bind",
+                PREVIEW_TOGGLE_BIND,
+                "--preview",
+                preview_command,
+                "--preview-window",
+                preview_window_options(),
             ],
-            input="\n".join(rows), stdout=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace",
+            input="\n".join(rows),
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0:
             return -1 if allow_back else None
@@ -117,19 +130,29 @@ def prompt_apply_destination(target_project: Path) -> str:
     console.print()
     console.print("[dim]Where would you like to apply?[/dim]")
     try:
-        proj_label = "~/" + target_project.relative_to(Path.home()).as_posix() if target_project.is_relative_to(Path.home()) else str(target_project)
+        proj_label = (
+            "~/" + target_project.relative_to(Path.home()).as_posix()
+            if target_project.is_relative_to(Path.home())
+            else str(target_project)
+        )
     except Exception:
         proj_label = str(target_project)
     console.print(f"  [choice]1)[/choice] Current project [dim]({proj_label}; default)[/dim]")
-    console.print("  [choice]2)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]")
+    console.print(
+        "  [choice]2)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]"
+    )
     return _ask("[bold]Choose destination[/bold]", choices=["1", "2"], default="1")
 
 
 def prompt_apply_type() -> str:
     console.print()
     console.print("[dim]What would you like to apply?[/dim]")
-    console.print("  [choice]1)[/choice] Specific skill(s) [dim](search & pick across all presets; default)[/dim]")
-    console.print("  [choice]2)[/choice] An entire preset [dim](apply all skills from a preset)[/dim]")
+    console.print(
+        "  [choice]1)[/choice] Specific skill(s) [dim](search & pick across all presets; default)[/dim]"
+    )
+    console.print(
+        "  [choice]2)[/choice] An entire preset [dim](apply all skills from a preset)[/dim]"
+    )
     return _ask("[bold]Choose an option[/bold]", choices=["1", "2"], default="1")
 
 
@@ -146,9 +169,17 @@ def prompt_preset(
         default_choice = str(names.index(default_name) + 1)
 
     if _use_preset_picker(len(names), config):
-        extra = ("all presets", "Search every skill across all presets.") if include_all else ("cancel", "Cancel selection.")
+        extra = (
+            ("all presets", "Search every skill across all presets.")
+            if include_all
+            else ("cancel", "Cancel selection.")
+        )
         selected = _browse_preset_choices(
-            names, config, presets_dir, extra, default_name,
+            names,
+            config,
+            presets_dir,
+            extra,
+            default_name,
         )
         if selected is None:
             raise SystemExit(0)
@@ -159,7 +190,9 @@ def prompt_preset(
         return names[selected - 1]
 
     if include_all:
-        console.print("  [header]0)[/header] [header]all presets[/header] [dim](search every skill; default)[/dim]")
+        console.print(
+            "  [header]0)[/header] [header]all presets[/header] [dim](search every skill; default)[/dim]"
+        )
     for index, name in enumerate(names, 1):
         marker = " [dim]*[/dim]" if name == default_name else ""
         console.print(f"  [choice]{index})[/choice] {name}{marker}")
@@ -173,7 +206,11 @@ def prompt_preset(
             return names[int(picked) - 1]
         if picked in names:
             return picked
-        valid = f"0, a number from 1 to {len(names)}" if include_all else f"a number from 1 to {len(names)}"
+        valid = (
+            f"0, a number from 1 to {len(names)}"
+            if include_all
+            else f"a number from 1 to {len(names)}"
+        )
         print_warn(f"No preset '{picked}'. Pick {valid}, or a name.")
 
 
@@ -187,7 +224,10 @@ def prompt_skills(names: list[str], action: str = "apply") -> list[str]:
     tokens = _ask(f"[bold]Skills to {action}[/bold]", default=ALL_SKILLS).replace(",", " ").split()
     if not tokens or ALL_SKILLS in tokens:
         return names
-    chosen = [names[int(token) - 1] if token.isdigit() and 1 <= int(token) <= len(names) else token for token in tokens]
+    chosen = [
+        names[int(token) - 1] if token.isdigit() and 1 <= int(token) <= len(names) else token
+        for token in tokens
+    ]
     chosen = [name for name in chosen if name in names]
     if not chosen:
         print_error("No known skills selected; nothing to do.")
@@ -245,7 +285,6 @@ def prompt_preset_or_new(
         print_warn(f"Pick a number from 0 to {len(choices)}, or a name.")
 
 
-
 def prompt_new_preset_name() -> str:
     while True:
         name = _ask("[bold]Enter preset name[/bold]")
@@ -266,7 +305,11 @@ def prompt_destination(
     names = sorted(path.name for path in presets_dir.iterdir() if path.is_dir())
     proj = target_project or Path.cwd()
     try:
-        proj_label = "~/" + proj.relative_to(Path.home()).as_posix() if proj.is_relative_to(Path.home()) else str(proj)
+        proj_label = (
+            "~/" + proj.relative_to(Path.home()).as_posix()
+            if proj.is_relative_to(Path.home())
+            else str(proj)
+        )
     except Exception:
         proj_label = str(proj)
 
@@ -276,7 +319,9 @@ def prompt_destination(
     console.print("[dim]Where would you like to install?[/dim]")
     console.print(f"  [choice]1)[/choice] Current project [dim]({proj_label}; default)[/dim]")
     console.print("  [choice]2)[/choice] Preset [dim](~/.skill-ctl/presets/...)[/dim]")
-    console.print("  [choice]3)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]")
+    console.print(
+        "  [choice]3)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]"
+    )
     choices = ["1", "2", "3"]
     if allow_add_more:
         console.print("  [choice]+)[/choice] Search & add another skill")

@@ -19,6 +19,7 @@ def safe_rmtree(path: Path) -> None:
             func(p)
         except Exception:
             pass
+
     if path.exists():
         shutil.rmtree(path, onerror=_remove_readonly)
 
@@ -32,16 +33,27 @@ def sandbox(tmp_path):
     source = home / ".skill-ctl" / "presets" / "demo" / "a"
     source.mkdir(parents=True)
     (source / "SKILL.md").write_text("original preset\n", encoding="utf-8")
-    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
-               PYTHONPATH=str(REPO_ROOT),
-               GIT_AUTHOR_NAME="test", GIT_AUTHOR_EMAIL="test@example.com",
-               GIT_COMMITTER_NAME="test", GIT_COMMITTER_EMAIL="test@example.com",
-               GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull)
+    env = dict(
+        os.environ,
+        HOME=str(home),
+        USERPROFILE=str(home),
+        PYTHONPATH=str(REPO_ROOT),
+        GIT_AUTHOR_NAME="test",
+        GIT_AUTHOR_EMAIL="test@example.com",
+        GIT_COMMITTER_NAME="test",
+        GIT_COMMITTER_EMAIL="test@example.com",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_SYSTEM=os.devnull,
+    )
 
     def run(*args):
         return subprocess.run(
-            [sys.executable, "-m", "skill_ctl.cli", *args], cwd=project,
-            env=env, input="", capture_output=True, text=True,
+            [sys.executable, "-m", "skill_ctl.cli", *args],
+            cwd=project,
+            env=env,
+            input="",
+            capture_output=True,
+            text=True,
         )
 
     return home, project, source, run
@@ -116,12 +128,20 @@ def test_pull_preview_switching_remote_preserves_local_history(tmp_path, sandbox
     subprocess.run(["git", "clone", "--bare", "-q", remote_backup, str(remote_copy)], check=True)
     git_dir = home / ".skill-ctl" / ".git"
     (git_dir / "local-history-marker").write_text("local history", encoding="utf-8")
-    before = {path.relative_to(git_dir): path.read_bytes() for path in git_dir.rglob("*") if path.is_file()}
+    before = {
+        path.relative_to(git_dir): path.read_bytes()
+        for path in git_dir.rglob("*")
+        if path.is_file()
+    }
     content = source / "SKILL.md"
     content.write_text("uncommitted work\n", encoding="utf-8")
     result = run("backup", "pull", "--repo", remote_copy.as_uri(), "--dry-run", "--yes")
     assert result.returncode == 0, result.stdout + result.stderr
-    after = {path.relative_to(git_dir): path.read_bytes() for path in git_dir.rglob("*") if path.is_file()}
+    after = {
+        path.relative_to(git_dir): path.read_bytes()
+        for path in git_dir.rglob("*")
+        if path.is_file()
+    }
     assert after == before
     assert content.read_text() == "uncommitted work\n"
 
@@ -149,7 +169,13 @@ def test_windows_cleanup_preserves_unrelated_executables(tmp_path, monkeypatch):
     directories = [prefix / "Scripts", prefix / "bin", launcher]
     for directory in directories:
         directory.mkdir(parents=True)
-        for name in ("skctl.old.exe", "skill-ctl.old.exe", "gold.exe", "unrelated.old.exe", "skctl.exe"):
+        for name in (
+            "skctl.old.exe",
+            "skill-ctl.old.exe",
+            "gold.exe",
+            "unrelated.old.exe",
+            "skctl.exe",
+        ):
             (directory / name).write_bytes(b"executable")
     monkeypatch.setattr(updater, "is_windows", lambda: True)
     monkeypatch.setattr(updater.sys, "prefix", str(prefix))
@@ -163,12 +189,17 @@ def test_windows_cleanup_preserves_unrelated_executables(tmp_path, monkeypatch):
         assert not (directory / "skill-ctl.old.exe").exists()
 
 
-@pytest.mark.parametrize("selection, expected", [
-    (["--skill", "a"], {".agents/skills/b", ".claude/skills/b"}),
-    (["--agent", "universal"], {".claude/skills/a", ".claude/skills/b"}),
-    (["--agent", "universal", "--skill", "a"],
-     {".claude/skills/a", ".agents/skills/b", ".claude/skills/b"}),
-])
+@pytest.mark.parametrize(
+    "selection, expected",
+    [
+        (["--skill", "a"], {".agents/skills/b", ".claude/skills/b"}),
+        (["--agent", "universal"], {".claude/skills/a", ".claude/skills/b"}),
+        (
+            ["--agent", "universal", "--skill", "a"],
+            {".claude/skills/a", ".agents/skills/b", ".claude/skills/b"},
+        ),
+    ],
+)
 def test_filtered_unapply_preserves_remaining_selection(sandbox, selection, expected):
     home, project, source, run = sandbox
     other = source.parent / "b"
@@ -259,7 +290,10 @@ def test_rename_rolls_back_when_link_replacement_fails(sandbox, monkeypatch):
 
     def fail_second_replacement(path, destination):
         dest_str = str(destination)
-        if path.name == "updated" and (".claude" in dest_str or any(".claude" in part for part in getattr(destination, "parts", ()))):
+        if path.name == "updated" and (
+            ".claude" in dest_str
+            or any(".claude" in part for part in getattr(destination, "parts", ()))
+        ):
             raise PermissionError("cannot replace link")
         return replace(path, destination)
 
@@ -277,6 +311,7 @@ def test_rename_rolls_back_when_link_replacement_fails(sandbox, monkeypatch):
 
 def test_get_github_token_from_env_or_gh(monkeypatch):
     from skill_ctl import catalog
+
     monkeypatch.setattr(catalog, "_GH_TOKEN_CACHE", None)
     monkeypatch.setenv("GITHUB_TOKEN", "token_env_123")
     assert catalog.get_github_token() == "token_env_123"
@@ -298,6 +333,7 @@ def test_get_github_token_from_env_or_gh(monkeypatch):
 
 def test_update_all_concurrency(sandbox, monkeypatch):
     from skill_ctl import skills as skills_mod
+
     home, project, source, run = sandbox
     preset1 = home / ".skill-ctl" / "presets" / "p1"
     preset2 = home / ".skill-ctl" / "presets" / "p2"
@@ -326,6 +362,7 @@ def test_update_all_concurrency(sandbox, monkeypatch):
 
 def test_remove_skills_from_preset_rejects_wildcard(tmp_path):
     from skill_ctl.presets import remove_skills_from_preset
+
     preset_dir = tmp_path / "preset"
     preset_dir.mkdir()
     skill_a = preset_dir / "skills" / "a"
@@ -353,6 +390,7 @@ def test_agent_traversal_rejected(sandbox):
 def test_repo_url_rejects_leading_dash():
     from skill_ctl.backup import repo_url
     from skill_ctl.presets import github_repo_url
+
     with pytest.raises(SystemExit):
         github_repo_url("--upload-pack=evil")
     with pytest.raises(SystemExit):
@@ -361,13 +399,21 @@ def test_repo_url_rejects_leading_dash():
 
 def test_sanitize_url_masks_tokens():
     from skill_ctl.backup import sanitize_url
+
     assert sanitize_url("https://github.com/org/repo.git") == "https://github.com/org/repo.git"
-    assert sanitize_url("https://ghp_secret@github.com/org/repo.git") == "https://***@github.com/org/repo.git"
-    assert sanitize_url("https://user:pass123@github.com/org/repo.git") == "https://***@github.com/org/repo.git"
+    assert (
+        sanitize_url("https://ghp_secret@github.com/org/repo.git")
+        == "https://***@github.com/org/repo.git"
+    )
+    assert (
+        sanitize_url("https://user:pass123@github.com/org/repo.git")
+        == "https://***@github.com/org/repo.git"
+    )
 
 
 def test_catalog_scheme_and_repo_sanitization():
     from skill_ctl.catalog import get_json, parse_github_repo
+
     with pytest.raises(ValueError, match="Unsupported URL scheme"):
         get_json("file:///etc/passwd")
 
@@ -401,7 +447,11 @@ def test_config_edit_windows_fallback_to_notepad(monkeypatch, tmp_path):
     monkeypatch.delenv("EDITOR", raising=False)
     monkeypatch.setattr(config_commands.os, "name", "nt")
     monkeypatch.setattr(config_commands.sys, "platform", "win32")
-    monkeypatch.setattr(config_commands.shutil, "which", lambda cmd: f"C:\\Windows\\System32\\{cmd}.exe" if cmd == "notepad" else None)
+    monkeypatch.setattr(
+        config_commands.shutil,
+        "which",
+        lambda cmd: f"C:\\Windows\\System32\\{cmd}.exe" if cmd == "notepad" else None,
+    )
     monkeypatch.setattr(config_commands, "ensure_config", lambda: path)
     monkeypatch.setattr(config_commands.subprocess, "run", calls.append)
 
@@ -481,15 +531,15 @@ def test_preview_commands_unquoted_placeholders():
 
     p_cmd = preview_command()
     assert '"{5}' not in p_cmd
-    assert '{5}' in p_cmd
+    assert "{5}" in p_cmd
 
     pm_cmd = preview_markdown_command("{5}")
     assert '"{5}"' not in pm_cmd
-    assert '{5}' in pm_cmd
+    assert "{5}" in pm_cmd
 
     pr_cmd = _preview_markdown_command("{3}")
     assert '"{3}"' not in pr_cmd
-    assert '{3}' in pr_cmd
+    assert "{3}" in pr_cmd
 
 
 def test_wants_picker_returns_false_when_fzf_missing(monkeypatch):
@@ -683,8 +733,12 @@ def test_smart_headless_multiple_skills_selection(tmp_path, monkeypatch):
 
     monkeypatch.setattr(skills_mod, "run_npx_skills", fake_run_npx_skills)
 
-    with patch("skill_ctl.catalog.fetch_repo_skills", return_value=["react-patterns", "web-design", "a11y"]):
-        with patch("skill_ctl.catalog.choose_repo_skills", return_value=["react-patterns", "web-design"]):
+    with patch(
+        "skill_ctl.catalog.fetch_repo_skills", return_value=["react-patterns", "web-design", "a11y"]
+    ):
+        with patch(
+            "skill_ctl.catalog.choose_repo_skills", return_value=["react-patterns", "web-design"]
+        ):
             skills_mod.add(package="owner/repo", preset="frontend")
 
     assert len(npx_calls) == 1
@@ -692,9 +746,12 @@ def test_smart_headless_multiple_skills_selection(tmp_path, monkeypatch):
     assert args == [
         "add",
         "owner/repo",
-        "--skill", "react-patterns",
-        "--skill", "web-design",
-        "--agent", "universal",
+        "--skill",
+        "react-patterns",
+        "--skill",
+        "web-design",
+        "--agent",
+        "universal",
         "-y",
     ]
     assert cwd == str(preset_dir)
@@ -729,8 +786,10 @@ def test_smart_headless_single_skill_auto_selection(tmp_path, monkeypatch):
     assert args == [
         "add",
         "owner/single-skill-repo",
-        "--skill", "only-one-skill",
-        "--agent", "universal",
+        "--skill",
+        "only-one-skill",
+        "--agent",
+        "universal",
         "-y",
     ]
 
@@ -768,7 +827,9 @@ def test_smart_headless_fallback_when_fetch_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     npx_calls = []
-    monkeypatch.setattr(skills_mod, "run_npx_skills", lambda args, cwd: (npx_calls.append(args), 0)[1])
+    monkeypatch.setattr(
+        skills_mod, "run_npx_skills", lambda args, cwd: (npx_calls.append(args), 0)[1]
+    )
 
     with patch("skill_ctl.catalog.fetch_repo_skills", return_value=[]):
         skills_mod.add(package="unknown-package", preset="frontend")
@@ -785,7 +846,9 @@ def test_search_remote_back_navigation_loops_to_reselect(monkeypatch, tmp_path):
     from skill_ctl import search as search_mod
 
     npx_calls = []
-    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(
+        search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     call_count = {"choose": 0, "dest": 0}
@@ -796,7 +859,14 @@ def test_search_remote_back_navigation_loops_to_reselect(monkeypatch, tmp_path):
             return [{"source": "wrong/repo", "name": "wrong-skill", "_action": "alt-a"}]
         return [{"source": "right/repo", "name": "right-skill", "_action": "alt-a"}]
 
-    def fake_prompt_dest(presets_dir, default_preset="default", target_project=None, allow_back=False, allow_add_more=False, selected_summary=None):
+    def fake_prompt_dest(
+        presets_dir,
+        default_preset="default",
+        target_project=None,
+        allow_back=False,
+        allow_add_more=False,
+        selected_summary=None,
+    ):
         call_count["dest"] += 1
         if call_count["dest"] == 1:
             return ("back", False, False)
@@ -828,7 +898,9 @@ def test_search_remote_add_more_accumulates_in_cart(monkeypatch, tmp_path):
     from skill_ctl import search as search_mod
 
     npx_calls = []
-    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(
+        search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0
+    )
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     call_count = {"choose": 0, "dest": 0}
@@ -839,7 +911,14 @@ def test_search_remote_add_more_accumulates_in_cart(monkeypatch, tmp_path):
             return [{"source": "owner/repo-a", "name": "skill-a", "_action": "alt-a"}]
         return [{"source": "owner/repo-b", "name": "skill-b", "_action": "alt-a"}]
 
-    def fake_prompt_dest(presets_dir, default_preset="default", target_project=None, allow_back=False, allow_add_more=False, selected_summary=None):
+    def fake_prompt_dest(
+        presets_dir,
+        default_preset="default",
+        target_project=None,
+        allow_back=False,
+        allow_add_more=False,
+        selected_summary=None,
+    ):
         call_count["dest"] += 1
         if call_count["dest"] == 1:
             return ("add_more", False, False)
@@ -861,7 +940,3 @@ def test_search_remote_add_more_accumulates_in_cart(monkeypatch, tmp_path):
     installed_packages = [c[0][1] for c in npx_calls]
     assert "owner/repo-a" in installed_packages
     assert "owner/repo-b" in installed_packages
-
-
-
-
