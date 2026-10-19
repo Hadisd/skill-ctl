@@ -173,8 +173,8 @@ def split_pasted_command(command: str) -> list[str]:
     lexer = shlex.shlex(command, posix=True)
     lexer.whitespace_split = True
     lexer.commenters = ""
-    lexer.escape = ""
-    return list(lexer)
+    import builtins
+    return builtins.list(lexer)
 
 def preprocess_args(args: list[str]) -> list[str]:
     """Cleans up args if someone pasted a raw 'npx skills add ...' command from skills.sh."""

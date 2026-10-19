@@ -114,17 +114,63 @@ def add(
             print_error(f"Invalid agent name '{agent}': must be an alphanumeric identifier.")
             sys.exit(1)
 
-    npx_args = [package]
-    if skill:
-        npx_args.extend(["--skill", skill])
-    if agent:
-        npx_args.extend(["--agent", agent])
-    elif config.get("default_agents"):
-        for a in config["default_agents"]:
-            npx_args.extend(["--agent", a])
+    # Smart Headless Driver: Pre-resolve skills and agents when not explicitly provided
+    resolved_skills = [skill] if skill else []
+    resolved_agents = [agent] if agent else []
 
-    # Only pass -y if explicitly requested
-    if yes:
+    if not skill and not all_skills and "@" not in package and sys.stdin.isatty() and not yes:
+        from skill_ctl.catalog import fetch_repo_skills, choose_repo_skills
+        try:
+            repo_skills = fetch_repo_skills(package)
+            if len(repo_skills) == 1:
+                console.print(f"[dim]Found 1 skill in {package}: [bold]{repo_skills[0]}[/bold][/dim]")
+                resolved_skills = [repo_skills[0]]
+            elif len(repo_skills) > 1:
+                picked = choose_repo_skills(package, repo_skills)
+                if not picked:
+                    console.print("[dim]No skills selected. Aborted.[/dim]")
+                    return
+                resolved_skills = picked
+        except Exception:
+            pass
+
+    if not agent and not config.get("default_agents"):
+        if preset:
+            resolved_agents = ["universal"]
+        elif global_install:
+            resolved_agents = get_detected_global_agents()
+        else:
+            target_path = Path(project).expanduser().resolve() if project else Path.cwd()
+            detected_project_agents = []
+            if (target_path / ".agents").is_dir():
+                detected_project_agents.append("universal")
+            if (target_path / ".claude").is_dir():
+                detected_project_agents.append("claude-code")
+            if (target_path / ".cursor").is_dir():
+                detected_project_agents.append("cursor")
+            if (target_path / ".codex").is_dir():
+                detected_project_agents.append("codex")
+            if (target_path / ".windsurf").is_dir() or (target_path / ".codeium" / "windsurf").is_dir():
+                detected_project_agents.append("windsurf")
+            if (target_path / ".hermes").is_dir():
+                detected_project_agents.append("hermes")
+            if (target_path / ".github").is_dir():
+                detected_project_agents.append("github-copilot")
+            resolved_agents = detected_project_agents if detected_project_agents else ["universal"]
+    elif not agent and config.get("default_agents"):
+        resolved_agents = list(config["default_agents"])
+
+    npx_args = [package]
+    for s in resolved_skills:
+        npx_args.extend(["--skill", s])
+    for a in resolved_agents:
+        npx_args.extend(["--agent", a])
+
+    # If both skills and agents were pre-resolved, drive npx skills headlessly (-y)
+    drive_headless = (bool(resolved_skills) or all_skills or "@" in package) and bool(resolved_agents)
+
+    # Pass -y if requested or if driving headlessly
+    if yes or drive_headless:
         npx_args.append("-y")
 
     if copy:
