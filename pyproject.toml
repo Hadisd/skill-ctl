@@ -39,7 +39,8 @@ where = ["."]
 include = ["skill_ctl*"]
 
 [tool.setuptools.package-data]
-skill_ctl = ["*.mjs", "assets/*.mjs"]
+skill_ctl = ["assets/*.mjs"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

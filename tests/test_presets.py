@@ -1249,9 +1249,10 @@ def test_apply_falls_back_to_copy_when_symlinks_fail(env, monkeypatch):
 
 def test_loader_files_are_packaged():
     """runner.py loads these at runtime; pyproject must ship them in the wheel."""
-    assert '"*.mjs"' in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "assets/*.mjs" in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     for name in ("register.mjs", "loader.mjs"):
-        assert (REPO_ROOT / "skill_ctl" / name).exists()
+        assert (REPO_ROOT / "skill_ctl" / "assets" / name).exists()
+
 
 
 def test_update_refuses_a_preset_without_a_lockfile(env):

@@ -303,7 +303,8 @@ def test_scope_patch_can_be_switched_off(tmp_path, monkeypatch):
 
 def test_loader_gives_up_on_a_changed_upstream():
     """No marker to patch means hand back the source untouched, not a half-patch."""
-    source = (REPO_ROOT / "skill_ctl" / "loader.mjs").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "skill_ctl" / "assets" / "loader.mjs").read_text(encoding="utf-8")
+
     assert source.count("return result;") >= 3, "each bail-out returns the original"
     assert "patch_scope_prompt: false" in source, "the warning must name the way out"
 

@@ -300,9 +300,10 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
         snapshot = Path(temporary) / "rows.json"
         snapshot.write_text(json.dumps(lines), encoding="utf-8")
         reload_rows = (
-            f"{shell_quote(sys.executable)} -m skill_ctl.picker_filter "
+            f"{shell_quote(sys.executable)} -m skill_ctl.ui.picker_filter "
             f"{shell_quote(str(snapshot))} {{q}}"
         )
+
         result = subprocess.run(
             [
                 "fzf",
