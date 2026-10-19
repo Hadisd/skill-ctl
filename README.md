@@ -655,3 +655,23 @@ npx:
 > Skills run with the agent's permissions. Read `SKILL.md` and inspect included scripts before installation. Check the package source before using `-y` or `--all`. Use `--copy` if you do not want a symlink to follow later source changes.
 
 `skctl` manages skill locations and preset membership. It does not inspect skills for malicious or unsafe instructions.
+
+## Development
+
+```bash
+# Install dependencies
+make install
+
+# Run full test suite in parallel
+make test
+
+# Run linter
+make lint
+
+# Automatically format code
+make format
+
+# Run linter and tests together
+make check
+```
+
