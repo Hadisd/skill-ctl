@@ -17,7 +17,7 @@ if __package__ is None or __package__ == "":
         sys.path.insert(0, str(parent))
 
 from skill_ctl.config import ensure_config, load_config
-from skill_ctl.constants import SELECT_INTERACTIVELY, PRESETS_DIR, BASE_DIR
+from skill_ctl.constants import BASE_DIR, PRESETS_DIR, SELECT_INTERACTIVELY
 from skill_ctl.theme import install_typer_styling
 from skill_ctl.ui import console, set_theme
 

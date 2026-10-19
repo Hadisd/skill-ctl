@@ -5,7 +5,6 @@ import json as jsonlib
 import os
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -17,11 +16,13 @@ from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for
 from skill_ctl.presets import (
     add_installed_to_global,
-    apply as apply_preset,
     ensure_preset_dir,
     get_global_skills,
     get_preset_skills,
     preset_path,
+)
+from skill_ctl.presets import (
+    apply as apply_preset,
 )
 from skill_ctl.registry import presets_for
 from skill_ctl.runner import run_npx_skills
@@ -204,7 +205,8 @@ def search(
             print_error("skctl search is interactive; run it in a terminal or use --json.")
             sys.exit(1)
 
-        from skill_ctl.catalog import choose as choose_catalog_skill, inspect as inspect_catalog_skill
+        from skill_ctl.catalog import choose as choose_catalog_skill
+        from skill_ctl.catalog import inspect as inspect_catalog_skill
 
         cart: list[dict] = []
         current_query = query or ""

@@ -5,11 +5,11 @@ from typing import Annotated, Optional
 
 import typer
 
-from skill_ctl.config import load_config, all_target_dirs
-from skill_ctl.ui import console, print_header, print_success, print_warn
+from skill_ctl.config import all_target_dirs, load_config
 from skill_ctl.linker import prune_empty_dirs
 from skill_ctl.presets import preset_path
-from skill_ctl.registry import load_applied, save_applied, presets_for, write_project_file
+from skill_ctl.registry import load_applied, presets_for, save_applied, write_project_file
+from skill_ctl.ui import console, print_header, print_success, print_warn
 
 
 def broken_links(project: Path, rel_dirs: list) -> list[Path]:

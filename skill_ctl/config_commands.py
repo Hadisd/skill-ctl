@@ -11,7 +11,12 @@ from typing import Annotated, Literal, Optional
 
 import typer
 
-from skill_ctl.config import DEFAULT_CONFIG_YAML, ensure_config, load_config, invalidate_config_cache
+from skill_ctl.config import (
+    DEFAULT_CONFIG_YAML,
+    ensure_config,
+    invalidate_config_cache,
+    load_config,
+)
 from skill_ctl.prompts import prompt_theme
 from skill_ctl.theme import THEMES, is_valid_theme, resolve_theme_name
 from skill_ctl.ui import console, print_success, print_warn, set_theme

@@ -2,13 +2,12 @@
 
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -352,8 +351,8 @@ def test_agent_traversal_rejected(sandbox):
 
 
 def test_repo_url_rejects_leading_dash():
-    from skill_ctl.presets import github_repo_url
     from skill_ctl.backup import repo_url
+    from skill_ctl.presets import github_repo_url
     with pytest.raises(SystemExit):
         github_repo_url("--upload-pack=evil")
     with pytest.raises(SystemExit):
@@ -447,8 +446,9 @@ def test_config_edit_file_not_found_handled(monkeypatch, tmp_path):
 
 
 def test_apply_skills_passes_target_is_directory(tmp_path, monkeypatch):
-    from skill_ctl.linker import apply_skills
     from pathlib import Path
+
+    from skill_ctl.linker import apply_skills
 
     project = tmp_path / "project"
     project.mkdir()
@@ -505,6 +505,7 @@ def test_wants_picker_returns_false_when_fzf_missing(monkeypatch):
 
 def test_export_preset_skips_external_symlinks(tmp_path):
     import zipfile
+
     from skill_ctl.archive import export_preset
 
     preset_dir = tmp_path / "preset"
@@ -641,7 +642,7 @@ def test_doctor_global_scope(sandbox):
 
 
 def test_theme_resolution_and_aliases():
-    from skill_ctl.theme import THEMES, resolve_theme_name, is_valid_theme, build_theme
+    from skill_ctl.theme import build_theme, is_valid_theme, resolve_theme_name
 
     assert resolve_theme_name("catppuccin-mocha") == "catppuccin-mocha"
     assert resolve_theme_name("catppuccin") == "catppuccin"
@@ -663,8 +664,9 @@ def test_theme_resolution_and_aliases():
 
 def test_smart_headless_multiple_skills_selection(tmp_path, monkeypatch):
     """When a package has multiple skills, user picks via choose_repo_skills and npx runs headlessly."""
-    from unittest.mock import patch
     import sys
+    from unittest.mock import patch
+
     from skill_ctl import skills as skills_mod
 
     preset_dir = tmp_path / "presets" / "frontend"
@@ -700,8 +702,9 @@ def test_smart_headless_multiple_skills_selection(tmp_path, monkeypatch):
 
 def test_smart_headless_single_skill_auto_selection(tmp_path, monkeypatch):
     """When a package has exactly 1 skill, it is auto-selected and run headlessly."""
-    from unittest.mock import patch
     import sys
+    from unittest.mock import patch
+
     from skill_ctl import skills as skills_mod
 
     preset_dir = tmp_path / "presets" / "default"
@@ -734,8 +737,9 @@ def test_smart_headless_single_skill_auto_selection(tmp_path, monkeypatch):
 
 def test_smart_headless_user_cancellation(tmp_path, monkeypatch):
     """When user cancels skill selection in fzf, add() aborts cleanly without calling npx skills."""
-    from unittest.mock import patch
     import sys
+    from unittest.mock import patch
+
     from skill_ctl import skills as skills_mod
 
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
@@ -752,8 +756,9 @@ def test_smart_headless_user_cancellation(tmp_path, monkeypatch):
 
 def test_smart_headless_fallback_when_fetch_empty(tmp_path, monkeypatch):
     """When fetch_repo_skills returns empty (e.g. offline/unknown), falls back to normal flow."""
-    from unittest.mock import patch
     import sys
+    from unittest.mock import patch
+
     from skill_ctl import skills as skills_mod
 
     preset_dir = tmp_path / "presets" / "frontend"
@@ -776,6 +781,7 @@ def test_smart_headless_fallback_when_fetch_empty(tmp_path, monkeypatch):
 def test_search_remote_back_navigation_loops_to_reselect(monkeypatch, tmp_path):
     """Choosing 'b' (Back) at destination prompt resets cart and lets user re-pick."""
     import sys
+
     from skill_ctl import search as search_mod
 
     npx_calls = []
@@ -816,8 +822,10 @@ def test_search_remote_back_navigation_loops_to_reselect(monkeypatch, tmp_path):
 def test_search_remote_add_more_accumulates_in_cart(monkeypatch, tmp_path):
     """Choosing '+' (Add more) at destination prompt accumulates multiple skills into cart."""
     import sys
-    from skill_ctl import search as search_mod
+
     from rich.prompt import Prompt
+
+    from skill_ctl import search as search_mod
 
     npx_calls = []
     monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)

@@ -1,22 +1,16 @@
 """Unit tests for remote catalog caching, lazy loading, and fast-paths."""
 
-import json
 import time
-from pathlib import Path
+
 import pytest
 
 from skill_ctl import catalog
 from skill_ctl.catalog import (
-    search,
-    details,
-    frontmatter,
-    cached_search,
-    write_rows,
     _read_disk_cache,
     _write_disk_cache,
-    QUERY_CACHE_DIR,
-    REPO_CACHE_DIR,
-    SKILL_CACHE_DIR,
+    details,
+    frontmatter,
+    search,
 )
 
 
@@ -101,7 +95,7 @@ def test_repo_metadata_caching_in_details(monkeypatch):
     monkeypatch.setattr(catalog, "frontmatter", lambda s, n: {})
 
     skill = {"name": "skill-a", "source": "cached-owner/cached-repo", "remote": "skills.sh"}
-    
+
     # 1. First details call: hits GitHub API
     info1 = details(skill)
     assert info1["stars"] == 999

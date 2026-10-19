@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -13,7 +13,7 @@ import typer
 from rich.prompt import Confirm
 
 from skill_ctl import __version__
-from skill_ctl.ui import console, print_error, print_success, print_warn
+from skill_ctl.ui import print_error, print_success
 
 LATEST_RELEASE_URL = "https://api.github.com/repos/Hadisd/skill-ctl/releases/latest"
 

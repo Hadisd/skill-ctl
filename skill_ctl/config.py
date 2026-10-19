@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
-from skill_ctl.constants import BASE_DIR, CONFIG_FILE, DEFAULT_TARGETS, AGENT_DIR_MAP
+from skill_ctl.constants import AGENT_DIR_MAP, BASE_DIR, CONFIG_FILE, DEFAULT_TARGETS
 
 DEFAULT_MIN_RELEVANCE = 0.2
 DEFAULT_SEARCH_LIMIT = 50

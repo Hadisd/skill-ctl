@@ -9,6 +9,7 @@ from rich.markup import escape
 
 from skill_ctl.theme import build_theme
 
+
 class _LazyConsole:
     def __init__(self, stderr: bool = False):
         self._stderr = stderr
@@ -84,9 +85,9 @@ def print_error(text: str) -> None:
 
 
 # Backward-compatible lazy re-exports
-from skill_ctl.constants import ALL_PRESETS
 
 _PROMPT_SYMBOLS = {
+    "ALL_PRESETS",
     "Prompt",
     "prompt_add_source",
     "prompt_apply_type",

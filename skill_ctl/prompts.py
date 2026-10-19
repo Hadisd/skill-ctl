@@ -1,5 +1,3 @@
-import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -9,11 +7,11 @@ from typing import Optional
 
 from rich.prompt import Prompt
 
-from skill_ctl.constants import ALL_PRESETS, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config
-from skill_ctl.registry import load_applied, projects_using
+from skill_ctl.constants import ALL_PRESETS, PREVIEW_TOGGLE_BIND, preview_window_options
+from skill_ctl.registry import load_applied
 from skill_ctl.skillscan import get_preset_skills
-from skill_ctl.theme import THEMES, bat_theme, fzf_color_arg, is_valid_theme, resolve_theme_name
+from skill_ctl.theme import THEMES, fzf_color_arg, is_valid_theme, resolve_theme_name
 from skill_ctl.ui import console, print_error, print_warn
 
 ALL_SKILLS = "0"
@@ -222,14 +220,14 @@ def prompt_preset_or_new(
             return prompt_new_preset_name()
         return choices[selected - 1]
 
-    console.print(f"  [header]0)[/header] [path]Create new preset[/path]")
+    console.print("  [header]0)[/header] [path]Create new preset[/path]")
     for index, name in enumerate(choices, 1):
         if name == default_preset:
             console.print(f"  [choice]{index})[/choice] {name} [dim]*[/dim]")
         else:
             console.print(f"  [choice]{index})[/choice] {name}")
     if allow_back:
-        console.print(f"  [choice]b)[/choice] Back")
+        console.print("  [choice]b)[/choice] Back")
     default_index = "1"
     while True:
         picked = _ask("[bold]Preset (number or name)[/bold]", default=default_index)
@@ -277,7 +275,7 @@ def prompt_destination(
         console.print(f"[bold]Selected:[/bold] [header]{selected_summary}[/header]")
     console.print("[dim]Where would you like to install?[/dim]")
     console.print(f"  [choice]1)[/choice] Current project [dim]({proj_label}; default)[/dim]")
-    console.print(f"  [choice]2)[/choice] Preset [dim](~/.skill-ctl/presets/...)[/dim]")
+    console.print("  [choice]2)[/choice] Preset [dim](~/.skill-ctl/presets/...)[/dim]")
     console.print("  [choice]3)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]")
     choices = ["1", "2", "3"]
     if allow_add_more:

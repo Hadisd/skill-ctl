@@ -9,9 +9,9 @@ from typing import Annotated, Literal, Optional
 
 import typer
 
-from skill_ctl.constants import BASE_DIR
 from skill_ctl.config import ensure_config, load_config
-from skill_ctl.ui import console, print_header, print_success, print_warn, print_error
+from skill_ctl.constants import BASE_DIR
+from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
 
 BRANCH = "main"
 DEFAULT_REPO_NAME = "skill-ctl-presets"
@@ -63,13 +63,19 @@ def backup_lock():
                 lock.write(b"\0")
                 lock.flush()
             lock.seek(0)
-            acquire = lambda: msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-            release = lambda: msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            def acquire():
+                return msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+
+            def release():
+                return msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
 
-            acquire = lambda: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            release = lambda: fcntl.flock(lock, fcntl.LOCK_UN)
+            def acquire():
+                return fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            def release():
+                return fcntl.flock(lock, fcntl.LOCK_UN)
         try:
             acquire()
         except OSError:

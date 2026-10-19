@@ -9,6 +9,7 @@ from typing import Optional
 
 from skill_ctl.config import load_config
 
+
 def get_detected_global_agents() -> list[str]:
     """Returns agents to target for global installation without creating unused directories in home.
     Always includes 'universal' (~/.agents/skills) which is used by Antigravity, Cursor, Codex, Cline, etc.

@@ -9,18 +9,19 @@ from typing import Annotated, Optional
 import typer
 from rich.prompt import Confirm
 
-from skill_ctl.constants import PRESETS_DIR
+from skill_ctl.backup import maybe_auto_push
 from skill_ctl.config import load_config
+from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
-from skill_ctl.ui import console, print_header, print_error, print_warn, print_success
-from skill_ctl.prompts import prompt_destination, prompt_skills
-from skill_ctl.runner import run_npx_skills, get_detected_global_agents
 from skill_ctl.presets import (
     ensure_preset_dir,
     get_preset_skills,
     preset_path,
 )
-from skill_ctl.backup import maybe_auto_push
+from skill_ctl.prompts import prompt_destination, prompt_skills
+from skill_ctl.runner import get_detected_global_agents, run_npx_skills
+from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
+
 
 def add(
     package: Annotated[
@@ -119,7 +120,7 @@ def add(
     resolved_agents = [agent] if agent else []
 
     if not skill and not all_skills and "@" not in package and sys.stdin.isatty() and not yes:
-        from skill_ctl.catalog import fetch_repo_skills, choose_repo_skills
+        from skill_ctl.catalog import choose_repo_skills, fetch_repo_skills
         try:
             repo_skills = fetch_repo_skills(package)
             if len(repo_skills) == 1:
@@ -636,8 +637,9 @@ def info(
     """Show details, description, and installation status of a skill."""
     import json
     import os
-    from skill_ctl.picker import parse_skill_meta
+
     from skill_ctl.catalog import format_relative_time
+    from skill_ctl.picker import parse_skill_meta
 
     presets_found: list[dict] = []
     if preset:

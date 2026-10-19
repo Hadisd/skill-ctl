@@ -4,8 +4,8 @@ import json
 import os
 import subprocess
 import sys
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -390,6 +390,7 @@ def test_long_descriptions_are_kept_out_of_json_truncation(env):
 
 def test_skill_meta_mtime_cache(tmp_path, monkeypatch):
     import time
+
     from skill_ctl import picker as picker_mod
     cache_file = tmp_path / ".metadata_cache.json"
     monkeypatch.setattr(picker_mod, "METADATA_CACHE_FILE", cache_file)
@@ -467,7 +468,7 @@ def test_multi_remote_search_merges_and_deduplicates(monkeypatch):
     # Search all remotes
     results = catalog.search("react", remotes=["all"], min_relevance=0)
     assert len(results) == 3
-    
+
     # react-patterns should be merged across skills.sh and skillsmp
     merged = next(r for r in results if r["name"] == "react-patterns")
     assert merged["source"] == "affaan-m/ECC"
@@ -549,17 +550,18 @@ def test_cli_search_remote_preprocess():
 
 
 def test_format_relative_time():
+    from datetime import datetime, timedelta, timezone
+
     from skill_ctl.catalog import format_relative_time
-    from datetime import datetime, timezone, timedelta
 
     now = datetime.now(timezone.utc)
     one_hour_ago = (now - timedelta(hours=1)).isoformat()
     two_days_ago = (now - timedelta(days=2)).isoformat()
-    
+
     res_1h = format_relative_time(one_hour_ago)
     assert "1h ago" in res_1h
     assert format_relative_time(one_hour_ago, short=True) == "1h ago"
-    
+
     res_2d = format_relative_time(two_days_ago)
     assert "2d ago" in res_2d
     assert format_relative_time(two_days_ago, short=True) == "2d ago"
@@ -642,6 +644,7 @@ def test_search_json_output_includes_updated_at(env):
 
 def test_search_remote_install_triggers_maybe_auto_push(monkeypatch, tmp_path):
     import sys
+
     from skill_ctl import search as search_mod
     pushed = []
     monkeypatch.setattr(search_mod, "maybe_auto_push", lambda msg: pushed.append(msg))
@@ -838,7 +841,7 @@ def test_search_remote_alt_p_prompts_and_installs_preset(monkeypatch, tmp_path):
         ],
     )
     monkeypatch.setattr("skill_ctl.catalog.inspect", lambda skills: True)
-    monkeypatch.setattr("skill_ctl.prompts.prompt_preset_or_new", lambda names, default_p, presets_dir: "chosen-preset")
+    monkeypatch.setattr("skill_ctl.prompts.prompt_preset_or_new", lambda *args, **kwargs: "chosen-preset")
 
     presets_dir = tmp_path / "presets"
     monkeypatch.setattr(search_mod, "PRESETS_DIR", presets_dir)
@@ -855,8 +858,9 @@ def test_search_remote_alt_p_prompts_and_installs_preset(monkeypatch, tmp_path):
 
 
 def test_search_remote_alt_g_installs_globally(monkeypatch):
-    from skill_ctl import search as search_mod
     from rich.prompt import Confirm
+
+    from skill_ctl import search as search_mod
 
     npx_calls = []
     monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
@@ -879,8 +883,9 @@ def test_search_remote_alt_g_installs_globally(monkeypatch):
 
 
 def test_search_remote_alt_g_cancelled(monkeypatch):
-    from skill_ctl import search as search_mod
     from rich.prompt import Confirm
+
+    from skill_ctl import search as search_mod
 
     npx_calls = []
     monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
@@ -900,8 +905,9 @@ def test_search_remote_alt_g_cancelled(monkeypatch):
 
 
 def test_add_installed_to_global_confirmation_and_cancel(env, monkeypatch):
-    from skill_ctl.presets import add_installed_to_global
     from rich.prompt import Confirm
+
+    from skill_ctl.presets import add_installed_to_global
 
     monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
@@ -1129,7 +1135,7 @@ def test_collect_multiple_presets(env):
 
 
 def test_config_search_limit(monkeypatch):
-    from skill_ctl.config import load_config, DEFAULT_SEARCH_LIMIT
+    from skill_ctl.config import DEFAULT_SEARCH_LIMIT, load_config
 
     # Default
     monkeypatch.setattr("skill_ctl.config.read_config_file", lambda: {})

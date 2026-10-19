@@ -4,10 +4,9 @@ import json
 import os
 import re
 import shlex
-import sys
 import shutil
-import hashlib
 import subprocess
+import sys
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -29,21 +28,53 @@ LIST_LIMIT = 25
 # a preset of a few hundred skills would otherwise be the whole screen.
 TABLE_LIMIT = 8
 
-from skill_ctl.constants import ALL_PRESETS, PRESETS_DIR, CONFIG_FILE, DEFAULT_TARGETS, SELECT_INTERACTIVELY, PREVIEW_TOGGLE_BIND, preview_window_options
-from skill_ctl.config import load_config, get_agent_dir_map, all_target_dirs, global_skill_dirs
-from skill_ctl.ui import console, print_header, print_success, print_warn, print_error
-from skill_ctl.prompts import prompt_apply_destination, prompt_apply_type, prompt_new_preset_name, prompt_preset, prompt_skills
-from skill_ctl.archive import export_preset as write_archive, safe_extract_preset, preset_changes
-from skill_ctl.linker import apply_skills, links_into_preset, prune_lockfile, prune_empty_dirs, skill_kinds, owned_copies, rename_preset_directory
-from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker, preview_markdown_command
+from skill_ctl.archive import export_preset as write_archive
+from skill_ctl.archive import preset_changes, safe_extract_preset
+from skill_ctl.backup import maybe_auto_push
+from skill_ctl.config import all_target_dirs, get_agent_dir_map, global_skill_dirs, load_config
+from skill_ctl.constants import (
+    ALL_PRESETS,
+    CONFIG_FILE,
+    DEFAULT_TARGETS,
+    PRESETS_DIR,
+    PREVIEW_TOGGLE_BIND,
+    SELECT_INTERACTIVELY,
+    preview_window_options,
+)
+from skill_ctl.linker import (
+    apply_skills,
+    links_into_preset,
+    owned_copies,
+    prune_empty_dirs,
+    prune_lockfile,
+    rename_preset_directory,
+    skill_kinds,
+)
+from skill_ctl.picker import DEFAULT_HEADER, pick, preview_markdown_command, rows_for, wants_picker
+from skill_ctl.prompts import (
+    prompt_apply_destination,
+    prompt_apply_type,
+    prompt_new_preset_name,
+    prompt_preset,
+    prompt_skills,
+)
+from skill_ctl.registry import (
+    PROJECT_FILE,
+    forget_apply,
+    keep_only,
+    load_applied,
+    presets_for,
+    projects_using,
+    read_project_file,
+    record_apply,
+    save_applied,
+    write_project_file,
+)
 from skill_ctl.runner import run_npx_skills
 from skill_ctl.skillscan import get_preset_skills
-from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
-from skill_ctl.registry import (
-    PROJECT_FILE, load_applied, save_applied, read_project_file, write_project_file,
-    record_apply, forget_apply, keep_only, presets_for, projects_using,
-)
-from skill_ctl.backup import maybe_auto_push
+from skill_ctl.theme import fzf_color_arg, picker_ansi
+from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
+
 
 def preset_path(preset_name: str) -> Path:
     """Resolve a preset name to its directory, rejecting anything that escapes
@@ -2124,6 +2155,7 @@ def status(
 ) -> None:
     """Show comprehensive skill, preset, and directory status."""
     import json as jsonlib
+
     from rich import box
     from rich.table import Table
 
@@ -2402,6 +2434,7 @@ def diff_presets(
 ) -> None:
     """Compare two presets."""
     import json as jsonlib
+
     from rich.syntax import Syntax
 
     p1 = preset_path(preset1_name)
@@ -2515,7 +2548,9 @@ def diff_cmd(
 ) -> None:
     """Show differences between project skills and a preset."""
     import json as jsonlib
+
     from rich.syntax import Syntax
+
     from skill_ctl.skills import scan_installed_skills
 
     target_project = Path(project).expanduser().resolve() if project else Path.cwd()

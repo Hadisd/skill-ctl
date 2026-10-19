@@ -1,20 +1,20 @@
 """Search skills.sh, skillsmp.com, and other remote registries."""
 
-import json
 import hashlib
+import json
 import os
 import re
-import shutil
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.parse
 import time
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -23,8 +23,13 @@ import yaml
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from skill_ctl.config import (
+    DEFAULT_MIN_RELEVANCE,
+    DEFAULT_SEARCH_LIMIT,
+    get_search_remotes,
+    load_config,
+)
 from skill_ctl.constants import BASE_DIR, PREVIEW_TOGGLE_BIND, preview_window_options
-from skill_ctl.config import DEFAULT_MIN_RELEVANCE, DEFAULT_SEARCH_LIMIT, load_config, get_search_remotes
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import console, print_error, print_header, print_warn
 
@@ -400,7 +405,6 @@ def _search_unranked(
         all_remotes = get_search_remotes()
 
     results_by_key: dict[tuple[str, str], dict] = {}
-    fetch_failed = False
 
     def run_provider(remote_info: dict) -> list[dict]:
         r_type = remote_info.get("type", remote_info.get("name", "")).lower()
@@ -416,7 +420,6 @@ def _search_unranked(
                 try:
                     items = fut.result()
                 except Exception:
-                    fetch_failed = True
                     items = []
                 for item in items:
                     key = (item.get("source", "").lower(), item.get("name", "").lower())
@@ -437,7 +440,7 @@ def _search_unranked(
                         if r2 and r2 not in r1:
                             existing["remote"] = f"{r1}, {r2}"
     except Exception:
-        fetch_failed = True
+        pass
 
     if not results_by_key:
         stale = _read_disk_cache(cache_file, ttl=None)

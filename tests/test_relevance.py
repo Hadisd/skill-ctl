@@ -49,7 +49,8 @@ def test_threshold_drops_weak_results():
         skill("hooks", source="facebook/react"),
         skill("terraform", source="hashicorp/terraform"),
     ]
-    names = lambda m: [r["name"] for r in rank_results("react", results, min_relevance=m)]
+    def names(m):
+        return [r["name"] for r in rank_results("react", results, min_relevance=m)]
     assert names(0) == ["react-hooks", "hooks", "terraform"]
     assert names(0.2) == ["react-hooks", "hooks"]
     assert names(0.6) == ["react-hooks"]

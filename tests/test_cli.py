@@ -220,6 +220,7 @@ def test_config_edit_windows_preserves_backslashes(monkeypatch, tmp_path):
 
 def test_config_edit_file_not_found_handled(monkeypatch, tmp_path, capsys):
     import pytest
+
     from skill_ctl import config_commands
 
     path = tmp_path / "config.yaml"
@@ -311,7 +312,7 @@ def index(tmp_path, monkeypatch):
 
 def test_record_is_the_union_of_every_apply(tmp_path, index):
     """Two applies leave two sets of links, so one entry must name both."""
-    from skill_ctl.registry import record_apply, presets_for
+    from skill_ctl.registry import presets_for, record_apply
 
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -350,7 +351,7 @@ def test_a_legacy_record_is_read_and_then_renamed(tmp_path, index):
 
 
 def test_record_keeps_presets_apart(tmp_path, index):
-    from skill_ctl.registry import record_apply, forget_apply, presets_for
+    from skill_ctl.registry import forget_apply, presets_for, record_apply
 
     proj = tmp_path / "proj"
     proj.mkdir()

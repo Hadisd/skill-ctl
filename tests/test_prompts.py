@@ -172,8 +172,9 @@ def test_prompt_preset_without_all_presets_excludes_zero(monkeypatch, capsys):
 
 
 def test_browse_preset_choices(monkeypatch, tmp_path):
-    from skill_ctl.prompts import _browse_preset_choices
     import json
+
+    from skill_ctl.prompts import _browse_preset_choices
 
     presets_dir = tmp_path / "presets"
     p1 = presets_dir / "preset1" / ".agents" / "skills" / "my-skill"

@@ -17,8 +17,12 @@ from pathlib import Path
 from typing import Optional
 
 from skill_ctl.catalog import format_relative_time, shell_quote
-from skill_ctl.constants import BASE_DIR, DEFAULT_PREVIEW_WINDOW, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.config import load_config
+from skill_ctl.constants import (
+    BASE_DIR,
+    PREVIEW_TOGGLE_BIND,
+    preview_window_options,
+)
 from skill_ctl.picker_filter import prioritize_names
 from skill_ctl.theme import bat_theme, fzf_color_arg, picker_ansi
 from skill_ctl.ui import print_warn
