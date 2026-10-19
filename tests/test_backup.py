@@ -26,7 +26,9 @@ def make_home(tmp_path: Path, name: str, with_preset: bool = True) -> dict:
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("# tdd\n", encoding="utf-8")
     home.mkdir(parents=True, exist_ok=True)
-    return dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT), **GIT_ENV)
+    return dict(
+        os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT), **GIT_ENV
+    )
 
 
 @pytest.fixture
@@ -40,7 +42,7 @@ def remote(tmp_path):
 def skctl(env, *args):
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
-        cwd=str(Path(env["HOME"])),
+        cwd=str(Path(env.get("USERPROFILE") or env["HOME"])),
         env=env,
         capture_output=True,
         text=True,

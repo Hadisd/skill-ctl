@@ -33,7 +33,7 @@ def env(tmp_path):
         "proj": proj,
         "presets": presets,
         "applied": home / ".skill-ctl" / "applied.json",
-        "env": dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+        "env": dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
     }
 
 

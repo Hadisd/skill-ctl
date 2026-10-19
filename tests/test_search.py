@@ -36,7 +36,7 @@ def env(tmp_path):
         "home": home,
         "proj": proj,
         "presets": presets,
-        "env": dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+        "env": dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
     }
 
 
@@ -204,18 +204,29 @@ def fake_fzf(tmp_path, picks, exit_code=0):
     """A stand-in for fzf: reads the candidate lines, echoes back the chosen ones."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    script = bin_dir / "fzf"
     wanted = " ".join(f"'{name}'" for name in picks)
-    script.write_text(
-        "#!/bin/sh\n"
-        "input=$(cat)\n"
-        f"for want in {wanted}; do\n"
-        '  printf "%s\\n" "$input" | grep "$want" \n'
-        "done\n"
-        f"exit {exit_code}\n",
-        encoding="utf-8",
-    )
-    script.chmod(0o755)
+    if os.name == "nt":
+        script = bin_dir / "fzf.cmd"
+        py_code = (
+            f"import sys; "
+            f"picks = [{wanted}]; "
+            f"lines = sys.stdin.readlines(); "
+            f"[sys.stdout.write(l) for p in picks for l in lines if p in l]; "
+            f"sys.exit({exit_code})"
+        )
+        script.write_text(f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\n', encoding="utf-8")
+    else:
+        script = bin_dir / "fzf"
+        script.write_text(
+            "#!/bin/sh\n"
+            "input=$(cat)\n"
+            f"for want in {wanted}; do\n"
+            '  printf "%s\\n" "$input" | grep "$want" \n'
+            "done\n"
+            f"exit {exit_code}\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
     return bin_dir
 
 
@@ -253,7 +264,8 @@ def test_fzf_is_given_previewable_lines(env, monkeypatch):
     colors = picker_ansi("default")
 
     assert "--preview" in seen["cmd"]
-    assert seen["cmd"][seen["cmd"].index("--preview") + 1] == "cat {5}/SKILL.md"
+    expected_preview = r"type {5}\SKILL.md" if os.name == "nt" else "cat {5}/SKILL.md"
+    assert seen["cmd"][seen["cmd"].index("--preview") + 1] == expected_preview
     assert "--multi" in seen["cmd"], "Tab-selecting several is the point"
     for line in seen["input"].splitlines():
         fields = line.split("\t")
@@ -273,7 +285,7 @@ def test_fzf_is_given_previewable_lines(env, monkeypatch):
         ({"bat"}, "bat "),
         ({"batcat"}, "batcat "),
         ({"glow"}, "glow "),
-        (set(), "cat "),
+        (set(), "type " if os.name == "nt" else "cat "),
     ],
 )
 def test_preview_uses_the_best_installed_renderer(monkeypatch, installed, expected):
@@ -291,7 +303,10 @@ def test_preview_uses_the_best_installed_renderer(monkeypatch, installed, expect
     if expected in ("bat ", "batcat "):
         assert "--squeeze-blank" in command
         assert "--wrap=character" in command
-        assert '--terminal-width="$FZF_PREVIEW_COLUMNS"' in command
+        if os.name == "nt":
+            assert '--terminal-width="%FZF_PREVIEW_COLUMNS%"' in command
+        else:
+            assert '--terminal-width="$FZF_PREVIEW_COLUMNS"' in command
 
 
 def test_preview_uses_windows_shell_syntax(monkeypatch):
@@ -330,7 +345,7 @@ def test_pick_applies_what_was_chosen(env, tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "search", "--pick"],
         cwd=env["proj"],
-        env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"),
+        env=dict(env["env"], PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"),
         capture_output=True,
         text=True,
     )
@@ -347,7 +362,7 @@ def test_pick_spanning_two_presets_applies_each(env, tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "search", "--pick"],
         cwd=env["proj"],
-        env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"),
+        env=dict(env["env"], PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"),
         capture_output=True,
         text=True,
     )
@@ -362,7 +377,7 @@ def test_cancelling_the_picker_changes_nothing(env, tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "search", "--pick"],
         cwd=env["proj"],
-        env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"),
+        env=dict(env["env"], PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"),
         capture_output=True,
         text=True,
     )
@@ -991,7 +1006,6 @@ def test_search_remote_alt_g_cancelled(monkeypatch):
 
 def test_add_installed_to_global_confirmation_and_cancel(env, monkeypatch):
     from rich.prompt import Confirm
-
     from skill_ctl.presets import add_installed_to_global
 
     monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
@@ -1030,11 +1044,14 @@ def test_search_local_alt_p_installs_into_preset(env, monkeypatch):
     }
 
     monkeypatch.setattr(
+        "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
+    monkeypatch.setattr(
         "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
     )
     monkeypatch.setattr(
         "skill_ctl.prompts.prompt_preset_or_new",
-        lambda names, default_p, presets_dir: "target-preset",
+        lambda names, default_p, presets_dir, **kwargs: "target-preset",
     )
 
     search_mod.search(project=str(env["proj"]))
@@ -1067,6 +1084,9 @@ def test_search_local_alt_g_adds_globally(env, monkeypatch):
         "_action": "alt-g",
     }
 
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
     )
@@ -1101,6 +1121,9 @@ def test_search_local_alt_x_deletes_skill(env, monkeypatch):
     }
 
     monkeypatch.setattr(
+        "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
+    monkeypatch.setattr(
         "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
     )
 
@@ -1133,6 +1156,9 @@ def test_search_local_alt_a_prompts_destination_and_applies_project(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
     )
@@ -1169,6 +1195,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_preset(env, monkeyp
         "_action": "alt-a",
     }
     monkeypatch.setattr(
+        "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
+    monkeypatch.setattr(
         "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
     )
 
@@ -1202,6 +1231,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_global(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
+    monkeypatch.setattr(
+        "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick_with_fzf", lambda rows, header=None, query="": ([chosen_skill], True)
     )

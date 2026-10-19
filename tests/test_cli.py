@@ -60,7 +60,7 @@ def test_windows_pasted_command_keeps_path_separators(monkeypatch):
 def run_skctl(home, *args):
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
-        env=dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
         capture_output=True,
         text=True,
     )
@@ -145,7 +145,7 @@ def test_load_config_creates_nothing(tmp_path):
     home.mkdir()
     res = subprocess.run(
         [sys.executable, "-c", "from skill_ctl.config import load_config; load_config()"],
-        env=dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
         capture_output=True,
         text=True,
     )
@@ -251,7 +251,7 @@ def test_ensure_config_writes_the_file_and_migrates_once(tmp_path):
     def run(code):
         res = subprocess.run(
             [sys.executable, "-c", code],
-            env=dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+            env=dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
             capture_output=True,
             text=True,
         )
@@ -405,7 +405,9 @@ def test_bare_skctl_shows_project_context(tmp_path, monkeypatch):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli"],
         cwd=proj,
-        env=dict(os.environ, HOME=str(tmp_path), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(
+            os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path), PYTHONPATH=str(REPO_ROOT)
+        ),
         capture_output=True,
         text=True,
     )
@@ -421,7 +423,9 @@ def test_find_command_is_completely_removed(tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "find"],
         cwd=tmp_path,
-        env=dict(os.environ, HOME=str(tmp_path), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(
+            os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path), PYTHONPATH=str(REPO_ROOT)
+        ),
         capture_output=True,
         text=True,
     )
@@ -433,7 +437,9 @@ def test_search_help_shows_unified_options(tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "search", "--help"],
         cwd=tmp_path,
-        env=dict(os.environ, HOME=str(tmp_path), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(
+            os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path), PYTHONPATH=str(REPO_ROOT)
+        ),
         capture_output=True,
         text=True,
     )
@@ -449,7 +455,9 @@ def test_list_command_executes_cleanly(tmp_path):
     res = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "list"],
         cwd=proj,
-        env=dict(os.environ, HOME=str(tmp_path), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(
+            os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path), PYTHONPATH=str(REPO_ROOT)
+        ),
         capture_output=True,
         text=True,
     )
@@ -459,7 +467,9 @@ def test_list_command_executes_cleanly(tmp_path):
     res_global = subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", "list", "-g"],
         cwd=proj,
-        env=dict(os.environ, HOME=str(tmp_path), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(
+            os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path), PYTHONPATH=str(REPO_ROOT)
+        ),
         capture_output=True,
         text=True,
     )

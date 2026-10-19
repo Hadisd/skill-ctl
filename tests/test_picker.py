@@ -63,6 +63,9 @@ def test_fzf_keeps_columns_and_prioritizes_names_when_typing(
     import re
     import shutil
 
+    if sys.platform == "win32":
+        pytest.skip("pty is not available on Windows")
+
     if not shutil.which("fzf"):
         pytest.skip("fzf is not installed")
 

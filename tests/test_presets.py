@@ -34,7 +34,7 @@ def env(tmp_path):
         "home": home,
         "proj": proj,
         "presets": presets,
-        "env": dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+        "env": dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
     }
 
 
@@ -184,6 +184,9 @@ def run_in_pty(env, args, drain_seconds=3.0, script=None):
     `'newpreset'`) apart from the words around it, so a plain phrase spanning both
     is only one contiguous string once those codes are gone.
     """
+    if sys.platform == "win32":
+        pytest.skip("pty is unavailable on Windows")
+
     import pty
     import re
     import select
@@ -245,7 +248,9 @@ def test_pick_still_asks_even_with_a_named_preset(env, tmp_path):
         encoding="utf-8",
     )
     script.chmod(0o755)
-    env_with_fzf = dict(env, env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"))
+    env_with_fzf = dict(
+        env, env=dict(env["env"], PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    )
 
     out = run_in_pty(env_with_fzf, ["apply", "mypreset", "--pick"], script=[(0.1, b"\n")])
 
@@ -257,23 +262,34 @@ def fake_fzf(tmp_path, picks, exit_code=0):
     """A stand-in for fzf: reads the candidate lines, echoes back the chosen ones."""
     bin_dir = tmp_path / "fzfbin"
     bin_dir.mkdir(exist_ok=True)
-    script = bin_dir / "fzf"
     wanted = " ".join(f"'{name}'" for name in picks)
-    script.write_text(
-        "#!/bin/sh\n"
-        "input=$(cat)\n"
-        f"for want in {wanted}; do\n"
-        '  printf "%s\\n" "$input" | grep "$want"\n'
-        "done\n"
-        f"exit {exit_code}\n",
-        encoding="utf-8",
-    )
-    script.chmod(0o755)
+    if os.name == "nt":
+        script = bin_dir / "fzf.cmd"
+        py_code = (
+            f"import sys; "
+            f"picks = [{wanted}]; "
+            f"lines = sys.stdin.readlines(); "
+            f"[sys.stdout.write(l) for p in picks for l in lines if p in l]; "
+            f"sys.exit({exit_code})"
+        )
+        script.write_text(f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\n', encoding="utf-8")
+    else:
+        script = bin_dir / "fzf"
+        script.write_text(
+            "#!/bin/sh\n"
+            "input=$(cat)\n"
+            f"for want in {wanted}; do\n"
+            '  printf "%s\\n" "$input" | grep "$want"\n'
+            "done\n"
+            f"exit {exit_code}\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
     return bin_dir
 
 
 def with_fzf(env, bin_dir):
-    return dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}")
+    return dict(env["env"], PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
 
 def force_fzf(env):
@@ -460,7 +476,9 @@ def test_bare_apply_choice_1_picks_specific_skill(env, tmp_path):
     script = bin_dir / "fzf"
     script.write_text("#!/bin/sh\ncat | grep 'review'\nexit 0\n", encoding="utf-8")
     script.chmod(0o755)
-    env_with_fzf = dict(env, env=dict(env["env"], PATH=f"{bin_dir}:{os.environ['PATH']}"))
+    env_with_fzf = dict(
+        env, env=dict(env["env"], PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    )
 
     out = run_in_pty(
         env_with_fzf,
@@ -616,7 +634,10 @@ def test_bare_unapply_on_an_unused_project_is_not_an_error(env, tmp_path):
 
 def test_default_preset_exists_on_a_fresh_install(tmp_path):
     home = tmp_path / "home"
-    fresh = {"env": dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)), "proj": tmp_path}
+    fresh = {
+        "env": dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
+        "proj": tmp_path,
+    }
     res = skctl(fresh, "presets")
     assert res.returncode == 0, res.stderr
     assert (home / ".skill-ctl" / "presets" / "default").is_dir()
@@ -733,7 +754,7 @@ def test_clone_offers_to_add_more_skills_after_creation(env):
 def test_create_offers_nothing_when_no_other_preset_has_skills(env, tmp_path):
     """skills.sh remains useful even when nothing is installed locally."""
     home = tmp_path / "emptyhome"
-    empty_env = dict(env, home=home, env=dict(env["env"], HOME=str(home)))
+    empty_env = dict(env, home=home, env=dict(env["env"], HOME=str(home), USERPROFILE=str(home)))
     out = run_in_pty(empty_env, ["presets", "create", "newpreset"], script=[(0.8, b"3\n")])
     assert "Add more skills to 'newpreset'?" in out, out
 
@@ -860,6 +881,7 @@ def test_create_can_copy_an_untracked_global_skill(env, monkeypatch, capsys):
 
     global_skill = make_skill(env["home"] / ".agents" / "skills", "global-only")
     monkeypatch.setenv("HOME", str(env["home"]))
+    monkeypatch.setenv("USERPROFILE", str(env["home"]))
     preset_dir = env["presets"] / "newpreset"
     preset_dir.mkdir(parents=True)
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
@@ -890,6 +912,7 @@ def test_create_reinstalls_a_tracked_global_skill(env, monkeypatch):
 
     global_skill = make_skill(env["home"] / ".agents" / "skills", "tracked")
     monkeypatch.setenv("HOME", str(env["home"]))
+    monkeypatch.setenv("USERPROFILE", str(env["home"]))
     lock = env["home"] / ".agents" / ".skill-lock.json"
     lock.write_text(
         json.dumps({"version": 3, "skills": {"tracked": {"source": "owner/package"}}}),
@@ -1022,7 +1045,7 @@ def test_invalid_default_preset_falls_back(tmp_path):
             "-c",
             "from skill_ctl.config import load_config; print(load_config()['default_preset'])",
         ],
-        env=dict(os.environ, HOME=str(home), PYTHONPATH=str(REPO_ROOT)),
+        env=dict(os.environ, HOME=str(home), USERPROFILE=str(home), PYTHONPATH=str(REPO_ROOT)),
         capture_output=True,
         text=True,
     )
@@ -1252,7 +1275,6 @@ def test_loader_files_are_packaged():
     assert "assets/*.mjs" in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     for name in ("register.mjs", "loader.mjs"):
         assert (REPO_ROOT / "skill_ctl" / "assets" / name).exists()
-
 
 
 def test_update_refuses_a_preset_without_a_lockfile(env):

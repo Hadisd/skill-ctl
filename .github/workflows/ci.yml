@@ -32,5 +32,14 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install system dependencies (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y fzf
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install fzf || true
+          fi
+
       - name: Run test suite
         run: uv run --extra dev pytest -n auto

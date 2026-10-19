@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 import skill_ctl.self_update as self_update
 from skill_ctl.self_update import SelfUpdateError, parse_release, parse_version
 
@@ -74,7 +73,7 @@ def test_installer_command_falls_back_to_running_python():
         "v0.1.1",
     )
     assert command == [
-        "/venv/bin/python",
+        str(Path("/venv/bin/python")),
         "-m",
         "pip",
         "install",
