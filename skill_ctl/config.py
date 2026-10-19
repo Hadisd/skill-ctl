@@ -311,3 +311,16 @@ def get_search_remotes(config: Optional[dict] = None) -> list[dict]:
     return [
         {"name": "skills.sh", "url": "https://skills.sh", "enabled": True},
     ]
+
+
+def project_skill_dirs(project: Path, config: dict) -> list[str]:
+    """Every directory in this project that could hold skills."""
+    found = list(all_target_dirs(config))
+    if project == Path.home():
+        return found
+    for pattern in (".*/skills", ".*/*/skills"):
+        for entry in sorted(project.glob(pattern)):
+            rel = entry.relative_to(project).as_posix()
+            if entry.is_dir() and rel not in found:
+                found.append(rel)
+    return found

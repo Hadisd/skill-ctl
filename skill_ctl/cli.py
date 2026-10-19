@@ -27,7 +27,7 @@ SUBCOMMAND_LOADERS = {
     "unapply": ("skill_ctl.presets", "unapply"),
     "diff": ("skill_ctl.diff", "diff_cmd"),
     "presets": ("skill_ctl.presets", "presets"),
-    "status": ("skill_ctl.presets", "status"),
+    "status": ("skill_ctl.status", "status"),
     "list": ("skill_ctl.skills", "list_skills"),
     "info": ("skill_ctl.skills", "info"),
     "remove": ("skill_ctl.skills", "remove"),
