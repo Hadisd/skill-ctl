@@ -40,13 +40,16 @@ def env(tmp_path):
     }
 
 
-def skctl(env, *args):
+def skctl(env, *args, **kwargs):
+    if "input" not in kwargs:
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
         cwd=env["proj"],
         env=env["env"],
         capture_output=True,
         text=True,
+        **kwargs,
     )
 
 
@@ -214,7 +217,10 @@ def fake_fzf(tmp_path, picks, exit_code=0):
             f"[sys.stdout.write(l) for p in picks for l in lines if p in l]; "
             f"sys.exit({exit_code})"
         )
-        script.write_text(f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\n', encoding="utf-8")
+        script.write_text(
+            f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\nexit /b %errorlevel%\r\n',
+            encoding="utf-8",
+        )
     else:
         script = bin_dir / "fzf"
         script.write_text(
@@ -1044,6 +1050,9 @@ def test_search_local_alt_p_installs_into_preset(env, monkeypatch):
     }
 
     monkeypatch.setattr(
+        search_mod, "pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
+    monkeypatch.setattr(
         "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
     )
     monkeypatch.setattr(
@@ -1071,6 +1080,8 @@ def test_search_local_alt_g_adds_globally(env, monkeypatch):
         "skill_ctl.search.add_installed_to_global", lambda cfg, skill: global_added.append(skill)
     )
     monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.constants.PRESETS_DIR", env["presets"])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     chosen_skill = {
@@ -1084,6 +1095,9 @@ def test_search_local_alt_g_adds_globally(env, monkeypatch):
         "_action": "alt-g",
     }
 
+    monkeypatch.setattr(
+        search_mod, "pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
     )
@@ -1103,6 +1117,8 @@ def test_search_local_alt_x_deletes_skill(env, monkeypatch):
     pushed = []
     monkeypatch.setattr(search_mod, "maybe_auto_push", lambda msg: pushed.append(msg))
     monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.constants.PRESETS_DIR", env["presets"])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("rich.prompt.Confirm.ask", lambda *args, **kwargs: True)
 
@@ -1120,6 +1136,9 @@ def test_search_local_alt_x_deletes_skill(env, monkeypatch):
         "_action": "alt-x",
     }
 
+    monkeypatch.setattr(
+        search_mod, "pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
     )
@@ -1144,6 +1163,9 @@ def test_search_local_alt_a_prompts_destination_and_applies_project(env, monkeyp
     monkeypatch.setattr(
         "skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: (None, True, False)
     )
+    monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.constants.PRESETS_DIR", env["presets"])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     chosen_skill = {
@@ -1156,6 +1178,9 @@ def test_search_local_alt_a_prompts_destination_and_applies_project(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
+    monkeypatch.setattr(
+        search_mod, "pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
     )
@@ -1195,6 +1220,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_preset(env, monkeyp
         "_action": "alt-a",
     }
     monkeypatch.setattr(
+        search_mod, "pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
+    monkeypatch.setattr(
         "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
     )
     monkeypatch.setattr(
@@ -1219,6 +1247,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_global(env, monkeyp
     monkeypatch.setattr(
         "skill_ctl.prompts.prompt_destination", lambda *args, **kwargs: (None, False, True)
     )
+    monkeypatch.setattr(search_mod, "PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.presets.PRESETS_DIR", env["presets"])
+    monkeypatch.setattr("skill_ctl.constants.PRESETS_DIR", env["presets"])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
     chosen_skill = {
@@ -1231,6 +1262,9 @@ def test_search_local_alt_a_prompts_destination_and_installs_global(env, monkeyp
         "updated": "now",
         "_action": "alt-a",
     }
+    monkeypatch.setattr(
+        search_mod, "pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
+    )
     monkeypatch.setattr(
         "skill_ctl.picker.pick", lambda rows, header=None, action="apply", query="": [chosen_skill]
     )

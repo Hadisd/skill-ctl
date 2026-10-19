@@ -3,8 +3,6 @@
 import time
 
 import pytest
-
-from skill_ctl import catalog
 from skill_ctl.catalog import (
     _read_disk_cache,
     _write_disk_cache,
@@ -12,6 +10,8 @@ from skill_ctl.catalog import (
     frontmatter,
     search,
 )
+
+from skill_ctl import catalog
 
 
 @pytest.fixture(autouse=True)

@@ -1813,36 +1813,42 @@ def browse_presets(preset_dirs: list[Path]) -> tuple[Optional[str], list[str]]:
             )
 
         preview_command = preview_markdown_command("{5}")
-        result = subprocess.run(
-            [
-                "fzf",
-                "--ansi",
-                "--multi",
-                "--expect",
-                "alt-x,alt-e,alt-r,alt-n,alt-y,alt-m,alt-t",
-                "--tabstop",
-                "2",
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "2,3,4",
-                "--header",
-                "Preset                  Skills  Applied projects\nTab sel · ↵ search · A-T edit · A-N new · A-Y clone · A-M merge · A-R rename · A-X del · A-E export",
-                "--color",
-                fzf_color_arg(config.get("theme")),
-                "--bind",
-                PREVIEW_TOGGLE_BIND,
-                "--preview",
-                preview_command,
-                "--preview-window",
-                preview_window_options(),
-            ],
-            input="\n".join(rows),
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--ansi",
+                    "--multi",
+                    "--expect",
+                    "alt-x,alt-e,alt-r,alt-n,alt-y,alt-m,alt-t",
+                    "--tabstop",
+                    "2",
+                    "--delimiter",
+                    "\t",
+                    "--with-nth",
+                    "2,3,4",
+                    "--header",
+                    "Preset                  Skills  Applied projects\nTab sel · ↵ search · A-T edit · A-N new · A-Y clone · A-M merge · A-R rename · A-X del · A-E export",
+                    "--color",
+                    fzf_color_arg(config.get("theme")),
+                    "--bind",
+                    PREVIEW_TOGGLE_BIND,
+                    "--preview",
+                    preview_command,
+                    "--preview-window",
+                    preview_window_options(),
+                ],
+                input="\n".join(rows),
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=is_cmd,
+            )
+        except OSError:
+            return None, []
         if result.returncode != 0 or not result.stdout.strip():
             return None, []
         selected = result.stdout.splitlines()

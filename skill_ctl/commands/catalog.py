@@ -772,44 +772,50 @@ def choose_with_fzf(
             if initial_rows:
                 initial_input = "\n".join(initial_rows)
 
-        result = subprocess.run(
-            [
-                "fzf",
-                "--multi",
-                "--ansi",
-                "--phony",
-                "--disabled",
-                "--query",
-                query,
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "1",
-                "--header",
-                header,
-                "--color",
-                fzf_color_arg(load_config().get("theme")),
-                "--expect",
-                "alt-a,alt-p,alt-g",
-                "--bind",
-                f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
-                "--bind",
-                f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
-                "--bind",
-                f"start:reload({rows})+refresh-preview",
-                "--bind",
-                f"change:reload({debounced_rows})+refresh-preview",
-                "--preview",
-                preview,
-                "--preview-window",
-                preview_window_options(),
-            ],
-            input=initial_input,
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--multi",
+                    "--ansi",
+                    "--phony",
+                    "--disabled",
+                    "--query",
+                    query,
+                    "--delimiter",
+                    "\t",
+                    "--with-nth",
+                    "1",
+                    "--header",
+                    header,
+                    "--color",
+                    fzf_color_arg(load_config().get("theme")),
+                    "--expect",
+                    "alt-a,alt-p,alt-g",
+                    "--bind",
+                    f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                    "--bind",
+                    f"alt-c:transform-query({shell_quote(sys.executable)} -m skill_ctl.catalog --source-file {{2}})",
+                    "--bind",
+                    f"start:reload({rows})+refresh-preview",
+                    "--bind",
+                    f"change:reload({debounced_rows})+refresh-preview",
+                    "--preview",
+                    preview,
+                    "--preview-window",
+                    preview_window_options(),
+                ],
+                input=initial_input,
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=is_cmd,
+            )
+        except OSError:
+            return []
         if result.returncode != 0 or not result.stdout.strip():
             return []
         selected = result.stdout.splitlines()
@@ -936,26 +942,32 @@ def choose_repo_skills(source: str, skills: list[str]) -> list[str]:
             f"Repository: {source} ({len(skills)} skills)\n"
             "Tab sel · ^A all / ^D none · ↵ confirm · Esc cancel"
         )
-        result = subprocess.run(
-            [
-                "fzf",
-                "--multi",
-                "--ansi",
-                "--header",
-                header,
-                "--color",
-                fzf_color_arg(load_config().get("theme")),
-                "--bind",
-                "ctrl-a:select-all,ctrl-d:deselect-all",
-                "--prompt",
-                "Select skills > ",
-            ],
-            input="\n".join(skills),
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--multi",
+                    "--ansi",
+                    "--header",
+                    header,
+                    "--color",
+                    fzf_color_arg(load_config().get("theme")),
+                    "--bind",
+                    "ctrl-a:select-all,ctrl-d:deselect-all",
+                    "--prompt",
+                    "Select skills > ",
+                ],
+                input="\n".join(skills),
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=is_cmd,
+            )
+        except OSError:
+            return []
         if result.returncode != 0:
             return []
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]

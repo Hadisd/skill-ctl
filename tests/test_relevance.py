@@ -1,7 +1,8 @@
 """Relevance ranking and threshold for remote search results."""
 
-from skill_ctl import catalog
 from skill_ctl.catalog import rank_results, relevance
+
+from skill_ctl import catalog
 
 
 def skill(name, source="o/r", description="", installs=0, stars=0):

@@ -38,13 +38,16 @@ def env(tmp_path):
     }
 
 
-def skctl(env, *args):
+def skctl(env, *args, **kwargs):
+    if "input" not in kwargs:
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
         cwd=env["proj"],
         env=env["env"],
         capture_output=True,
         text=True,
+        **kwargs,
     )
 
 
@@ -272,7 +275,10 @@ def fake_fzf(tmp_path, picks, exit_code=0):
             f"[sys.stdout.write(l) for p in picks for l in lines if p in l]; "
             f"sys.exit({exit_code})"
         )
-        script.write_text(f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\n', encoding="utf-8")
+        script.write_text(
+            f'@echo off\r\n"{sys.executable}" -c "{py_code}"\r\nexit /b %errorlevel%\r\n',
+            encoding="utf-8",
+        )
     else:
         script = bin_dir / "fzf"
         script.write_text(
@@ -1100,7 +1106,9 @@ def test_npx_args_target_skills_dir_and_repeat_skill_flags(env, monkeypatch):
         presets_mod.apply("mypreset", npx=True, skill="tdd,review")
 
     args = captured["args"]
-    assert args[1].endswith(".agents/skills"), f"must target the skills dir, got {args[1]}"
+    assert args[1].replace("\\", "/").endswith(".agents/skills"), (
+        f"must target the skills dir, got {args[1]}"
+    )
     assert "skills-lock.json" not in args[1]
     assert args.count("--skill") == 2, f"one --skill per name, got {args}"
     assert not any("," in a for a in args), "comma-joined names match nothing upstream"

@@ -39,13 +39,16 @@ def remote(tmp_path):
     return f"file://{path}"
 
 
-def skctl(env, *args):
+def skctl(env, *args, **kwargs):
+    if "input" not in kwargs:
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
         cwd=str(Path(env.get("USERPROFILE") or env["HOME"])),
         env=env,
         capture_output=True,
         text=True,
+        **kwargs,
     )
 
 
@@ -107,13 +110,23 @@ def test_restore_alias_pulls(tmp_path, remote):
 
 
 def test_init_without_repo_or_gh_fails_clearly(tmp_path):
+    import shutil
+
     env = make_home(tmp_path, "home1")
-    env["PATH"] = str(tmp_path / "empty-bin")  # no gh on PATH
-    (tmp_path / "empty-bin").mkdir(exist_ok=True)
-    for tool in ("git", "python3"):
-        real = subprocess.run(["which", tool], capture_output=True, text=True).stdout.strip()
-        if real:
-            (tmp_path / "empty-bin" / tool).symlink_to(real)
+    bin_dir = tmp_path / "empty-bin"
+    bin_dir.mkdir(exist_ok=True)
+    git_bin = shutil.which("git")
+    if sys.platform == "win32":
+        if git_bin:
+            (bin_dir / "git.cmd").write_text(f'@"{git_bin}" %*\r\n', encoding="utf-8")
+        (bin_dir / "python.cmd").write_text(f'@"{sys.executable}" %*\r\n', encoding="utf-8")
+        (bin_dir / "python3.cmd").write_text(f'@"{sys.executable}" %*\r\n', encoding="utf-8")
+    else:
+        if git_bin:
+            (bin_dir / "git").symlink_to(git_bin)
+        (bin_dir / "python3").symlink_to(sys.executable)
+        (bin_dir / "python").symlink_to(sys.executable)
+    env["PATH"] = str(bin_dir)
 
     res = skctl(env, "backup", "init")
     assert res.returncode == 1

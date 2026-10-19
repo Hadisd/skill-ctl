@@ -37,13 +37,16 @@ def env(tmp_path):
     }
 
 
-def skctl(env, *args, cwd=None):
+def skctl(env, *args, cwd=None, **kwargs):
+    if "input" not in kwargs:
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
     return subprocess.run(
         [sys.executable, "-m", "skill_ctl.cli", *args],
         cwd=str(cwd or env["proj"]),
         env=env["env"],
         capture_output=True,
         text=True,
+        **kwargs,
     )
 
 

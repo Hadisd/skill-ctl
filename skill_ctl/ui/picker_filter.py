@@ -19,26 +19,34 @@ def prioritize_names(lines: list[str], query: str) -> list[str]:
     env.pop("FZF_DEFAULT_OPTS_FILE", None)
 
     def matches(fields: str) -> list[str]:
-        result = subprocess.run(
-            [
-                "fzf",
-                "--ansi",
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "1,2,3,4",
-                "--nth",
-                fields,
-                "--filter",
-                query,
-            ],
-            input="\n".join(lines),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-        )
+        import shutil
+
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--ansi",
+                    "--delimiter",
+                    "\t",
+                    "--with-nth",
+                    "1,2,3,4",
+                    "--nth",
+                    fields,
+                    "--filter",
+                    query,
+                ],
+                input="\n".join(lines),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                shell=is_cmd,
+            )
+        except OSError:
+            return []
         if result.returncode not in (0, 1):
             result.check_returncode()
         return result.stdout.splitlines()

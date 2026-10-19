@@ -95,30 +95,36 @@ def _browse_preset_choices(
             marker = " *" if name == default_preset else ""
             rows.append(f"{index}\t{name}{marker}\t{preview}")
         preview_command = _preview_markdown_command("{3}")
-        result = subprocess.run(
-            [
-                "fzf",
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "2",
-                "--header",
-                "↵ choose · Esc cancel · ^/ view",
-                "--color",
-                fzf_color_arg(config.get("theme")),
-                "--bind",
-                PREVIEW_TOGGLE_BIND,
-                "--preview",
-                preview_command,
-                "--preview-window",
-                preview_window_options(),
-            ],
-            input="\n".join(rows),
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--delimiter",
+                    "\t",
+                    "--with-nth",
+                    "2",
+                    "--header",
+                    "↵ choose · Esc cancel · ^/ view",
+                    "--color",
+                    fzf_color_arg(config.get("theme")),
+                    "--bind",
+                    PREVIEW_TOGGLE_BIND,
+                    "--preview",
+                    preview_command,
+                    "--preview-window",
+                    preview_window_options(),
+                ],
+                input="\n".join(rows),
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=is_cmd,
+            )
+        except OSError:
+            return -1 if allow_back else None
         if result.returncode != 0:
             return -1 if allow_back else None
         val = result.stdout.partition("\t")[0]

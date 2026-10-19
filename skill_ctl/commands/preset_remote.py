@@ -160,35 +160,41 @@ def pick_remote_presets(preset_dirs: list[Path]) -> list[str]:
                 )
             )
         preview_cmd = preview_markdown_command("{4}")
-        result = subprocess.run(
-            [
-                "fzf",
-                "--ansi",
-                "--multi",
-                "--tabstop",
-                "2",
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "2,3",
-                "--header",
-                "Preset                  Skills\nTab sel · ^A all / ^D none · ↵ import · ^/ view",
-                "--color",
-                fzf_color_arg(config.get("theme")),
-                "--bind",
-                f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
-                "--preview",
-                preview_cmd,
-                "--preview-window",
-                preview_window_options(),
-            ],
-            input="\n".join(rows),
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--ansi",
+                    "--multi",
+                    "--tabstop",
+                    "2",
+                    "--delimiter",
+                    "\t",
+                    "--with-nth",
+                    "2,3",
+                    "--header",
+                    "Preset                  Skills\nTab sel · ^A all / ^D none · ↵ import · ^/ view",
+                    "--color",
+                    fzf_color_arg(config.get("theme")),
+                    "--bind",
+                    f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                    "--preview",
+                    preview_cmd,
+                    "--preview-window",
+                    preview_window_options(),
+                ],
+                input="\n".join(rows),
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                shell=is_cmd,
+            )
+        except OSError:
+            return []
         if result.returncode != 0 or not result.stdout.strip():
             return []
         return [

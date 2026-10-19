@@ -304,49 +304,55 @@ def pick_with_fzf(rows: list, header: Optional[str] = None, query: str = "") -> 
             f"{shell_quote(str(snapshot))} {{q}}"
         )
 
-        result = subprocess.run(
-            [
-                "fzf",
-                "--multi",
-                "--ansi",
-                "--no-sort",
-                "--no-hscroll",
-                "--tabstop",
-                "2",
-                "--query",
-                query,
-                "--delimiter",
-                "\t",
-                "--with-nth",
-                "1,2,3,4",
-                "--nth",
-                "1..4",
-                "--id-nth",
-                "5",
-                "--header",
-                header or DEFAULT_HEADER,
-                "--color",
-                fzf_color_arg(load_config().get("theme")),
-                "--expect",
-                "alt-p,alt-g,alt-x,alt-a",
-                "--bind",
-                f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
-                # Restore selected paths against every row before filtering again.
-                "--bind",
-                f"change:disable-search+reload-sync({reload_rows})",
-                "--bind",
-                "load:enable-search",
-                "--preview",
-                preview_command(),
-                "--preview-window",
-                preview_window_options(),
-            ],
-            input="\n".join(prioritize_names(lines, query)),
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        fzf_bin = shutil.which("fzf") or "fzf"
+        is_cmd = sys.platform == "win32" and fzf_bin.lower().endswith((".cmd", ".bat"))
+        try:
+            result = subprocess.run(
+                [
+                    fzf_bin,
+                    "--multi",
+                    "--ansi",
+                    "--no-sort",
+                    "--no-hscroll",
+                    "--tabstop",
+                    "2",
+                    "--query",
+                    query,
+                    "--delimiter",
+                    "\t",
+                    "--with-nth",
+                    "1,2,3,4",
+                    "--nth",
+                    "1..4",
+                    "--id-nth",
+                    "5",
+                    "--header",
+                    header or DEFAULT_HEADER,
+                    "--color",
+                    fzf_color_arg(load_config().get("theme")),
+                    "--expect",
+                    "alt-p,alt-g,alt-x,alt-a",
+                    "--bind",
+                    f"ctrl-a:select-all,ctrl-d:deselect-all,{PREVIEW_TOGGLE_BIND}",
+                    # Restore selected paths against every row before filtering again.
+                    "--bind",
+                    f"change:disable-search+reload-sync({reload_rows})",
+                    "--bind",
+                    "load:enable-search",
+                    "--preview",
+                    preview_command(),
+                    "--preview-window",
+                    preview_window_options(),
+                ],
+                input="\n".join(prioritize_names(lines, query)),
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=is_cmd,
+            )
+        except OSError:
+            return [], False
     if result.returncode >= 2 and result.returncode != 130:
         return [], False
     output_lines = result.stdout.splitlines()
