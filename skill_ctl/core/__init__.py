@@ -13,6 +13,7 @@ from skill_ctl.core.config import (
 from skill_ctl.core.constants import AGENT_DIR_MAP, BASE_DIR, CONFIG_FILE, PRESETS_DIR
 from skill_ctl.core.registry import presets_for
 from skill_ctl.core.scanner import scan_installed_skills
+from skill_ctl.core.skillscan import get_preset_skills
 
 __all__ = [
     "AGENT_DIR_MAP",
@@ -22,6 +23,7 @@ __all__ = [
     "all_target_dirs",
     "ensure_config",
     "get_agent_dir_map",
+    "get_preset_skills",
     "get_search_remotes",
     "global_skill_dirs",
     "load_config",
