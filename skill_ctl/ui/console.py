@@ -7,7 +7,7 @@ from typing import Optional
 from rich.console import Console
 from rich.markup import escape
 
-from skill_ctl.theme import build_theme
+from skill_ctl.ui.theme import build_theme
 
 
 class _LazyConsole:
