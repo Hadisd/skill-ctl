@@ -1,0 +1,660 @@
+"""Backing ~/.skill-ctl up to a GitHub repository (backup init/push/pull/status)."""
+
+import shutil
+import subprocess
+import sys
+import tempfile
+from contextlib import contextmanager
+from typing import Annotated, Literal, Optional
+
+import typer
+
+from skill_ctl.config import ensure_config, load_config
+from skill_ctl.constants import BASE_DIR
+from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
+
+BRANCH = "main"
+DEFAULT_REPO_NAME = "skill-ctl-presets"
+
+GITIGNORE = """# Ignore all root-level entries by default so cache, machine config, and future files stay local
+/*
+
+# Whitelist only presets and gitignore
+!/.gitignore
+!/presets/
+
+# Ignore noise within presets
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+"""
+
+
+def git(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
+    """Run git inside ~/.skill-ctl."""
+    if shutil.which("git") is None:
+        print_error("'git' not found on PATH. Install git and retry.")
+        sys.exit(1)
+    return subprocess.run(
+        ["git", "-C", str(BASE_DIR)] + args,
+        capture_output=capture,
+        text=True,
+        # Git's raw UTF-8 paths must not use Windows' locale-dependent codec.
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def has_repo() -> bool:
+    return (BASE_DIR / ".git").is_dir()
+
+
+@contextmanager
+def backup_lock():
+    """Serialize backup and sync operations, including background pushes."""
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    with (BASE_DIR / ".backup.lock").open("a+b") as lock:
+        if sys.platform == "win32":
+            import msvcrt
+
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+
+            def acquire():
+                return msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+
+            def release():
+                return msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            def acquire():
+                return fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            def release():
+                return fcntl.flock(lock, fcntl.LOCK_UN)
+
+        try:
+            acquire()
+        except OSError:
+            print_error("Another backup or sync is running. Try again when it finishes.")
+            raise SystemExit(1)
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                lock.seek(0)
+            release()
+
+
+import re
+
+
+def sanitize_url(url: Optional[str]) -> str:
+    """Mask embedded credentials in a git URL to prevent logging secrets."""
+    if not url:
+        return ""
+    return re.sub(r"://([^@:]+)(:[^@]*)?@", "://***@", url)
+
+
+def remote_url() -> Optional[str]:
+    if not has_repo():
+        return None
+    result = git(["remote", "get-url", "origin"], capture=True)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def repo_url(repo: str) -> str:
+    """Accept a full URL, 'owner/name', or a bare name (which needs gh to create)."""
+    if not repo or repo.startswith("-"):
+        print_error(f"Invalid repository '{repo}': cannot start with '-'.")
+        sys.exit(1)
+    if "://" in repo or repo.startswith("git@"):
+        return repo
+    if repo.count("/") == 1:
+        return f"https://github.com/{repo}.git"
+    print_error(f"Cannot tell who owns '{repo}'. Pass owner/name or a full URL.")
+    sys.exit(1)
+
+
+def ensure_local_repo() -> None:
+    """Make ~/.skill-ctl a git repo, without touching any remote."""
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_config()
+    if not has_repo():
+        if git(["init", "-b", BRANCH]).returncode != 0:
+            sys.exit(1)
+        print_success(f"Initialized git repository at {BASE_DIR}")
+    gitignore = BASE_DIR / ".gitignore"
+    if not gitignore.exists() or "!/presets/" not in gitignore.read_text(encoding="utf-8"):
+        gitignore.write_text(GITIGNORE, encoding="utf-8")
+
+
+def keep_empty_presets() -> None:
+    """Give every empty preset a .gitkeep, since git stores no empty directories.
+
+    A preset you made but have not filled yet would otherwise vanish on restore.
+    """
+    presets_dir = BASE_DIR / "presets"
+    if not presets_dir.is_dir():
+        return
+    for preset in presets_dir.iterdir():
+        if not preset.is_dir():
+            continue
+        if any(p.is_file() for p in preset.rglob("*")):
+            continue
+        try:
+            (preset / ".gitkeep").touch()
+        except OSError as e:
+            print_warn(f"Could not mark empty preset '{preset.name}': {e}")
+
+
+def set_remote(url: str) -> None:
+    verb = "set-url" if remote_url() else "add"
+    if git(["remote", verb, "origin", url]).returncode != 0:
+        sys.exit(1)
+
+
+def create_github_repo(name: str, private: bool) -> Optional[str]:
+    """Create the backup repo with the gh CLI and wire it up as origin."""
+    if shutil.which("gh") is None:
+        return None
+    print_header(f"Creating {'private' if private else 'public'} GitHub repo '{name}' via gh")
+    result = subprocess.run(
+        ["gh", "repo", "create", name, "--private" if private else "--public"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print((result.stderr or result.stdout).rstrip())
+        return None
+
+    # gh prints the new repo's URL; fall back to composing it from the account.
+    lines = [line for line in result.stdout.splitlines() if line.strip().startswith("http")]
+    url = lines[-1].strip() if lines else None
+    if not url:
+        owner = github_login()
+        if not owner:
+            return None
+        url = f"https://github.com/{owner}/{name}"
+    if not url.endswith(".git"):
+        url += ".git"
+    set_remote(url)
+    return url
+
+
+def backup(
+    action: Annotated[Literal["push", "pull", "init", "status"], typer.Argument()] = "push",
+    repo: Annotated[
+        Optional[str],
+        typer.Option(
+            "--repo",
+            "-r",
+            help="Backup repository: owner/name, a full git URL, or a bare name to create with gh.",
+        ),
+    ] = None,
+    message: Annotated[
+        Optional[str],
+        typer.Option(
+            "--message", "-m", help="Commit message for 'push' (default: 'backup presets')."
+        ),
+    ] = None,
+    public: Annotated[
+        bool, typer.Option("--public", help="Create the gh repo public instead of private.")
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip the confirmation when a pull or --force push overwrites presets.",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show incoming backup changes without restoring them.")
+    ] = False,
+    include_config: Annotated[
+        bool,
+        typer.Option(
+            "--config",
+            help="Also back up config.yaml (excluded by default; it's per-machine preference).",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="On 'push', overwrite the remote with what's here. On 'pull', discard local commits and take the "
+            "remote's instead. Either way, whichever side loses commits loses them for good; confirms first.",
+        ),
+    ] = False,
+) -> None:
+    """Back up ~/.skill-ctl (presets, not config.yaml) to a GitHub repository.
+
+    `init` points it at a repo, `push` commits and uploads, `pull` restores on
+    another machine, `status` shows what is not backed up yet.
+
+    config.yaml and applied.json stay local: config.yaml holds per-machine
+    preferences (theme, apply targets, default preset) and applied.json holds
+    this machine's absolute project paths, so restoring them on another
+    machine would fight its own setup rather than help it. Pass --config to
+    a push to include config.yaml anyway; applied.json never syncs.
+
+    A push rejected because the remote has commits you don't (e.g. pushed
+    from another machine) normally means `skctl backup pull` first. --force
+    skips that and overwrites the remote with what's here instead - use it
+    when this machine's presets are the ones you want to keep.
+    """
+    if action == "status":
+        backup_status()
+        return
+    if action == "pull" and dry_run:
+        backup_pull(repo, yes, dry_run, force)
+        return
+    with backup_lock():
+        if action == "init":
+            backup_init(repo, public, yes)
+        elif action == "push":
+            backup_push(message, repo, public, include_config, force, yes)
+        else:
+            backup_pull(repo, yes, dry_run, force)
+
+
+def backup_init(repo: Optional[str], public: bool, yes: bool = False) -> None:
+    ensure_local_repo()
+    current = remote_url()
+
+    if repo and "/" not in repo and "://" not in repo:
+        # A bare name is a repo to create, not one to point at.
+        if current:
+            print_warn(f"Repointing the backup away from {current}.")
+        url = create_github_repo(repo, not public)
+        if not url:
+            print_error("Could not create the repo (is the gh CLI installed and logged in?).")
+            print_warn("Create one yourself, then: skctl backup init --repo owner/name")
+            sys.exit(1)
+    elif repo:
+        url = repo_url(repo)
+        set_remote(url)
+    elif current:
+        url = current
+    else:
+        url = create_github_repo(DEFAULT_REPO_NAME, not public)
+        if not url:
+            print_error("No backup repository configured.")
+            print_warn(
+                "Run: skctl backup init --repo owner/name   (or install the gh CLI to create one)"
+            )
+            sys.exit(1)
+
+    maybe_reset_local_history(current, url, yes)
+
+    print_success(f"Backing up {BASE_DIR} to {sanitize_url(url)}")
+    print_warn("Presets are uploaded as-is; use a private repo if any skill is not public.")
+    step, note = suggest_next_step(url)
+    console.print(f"Next: [header]{step}[/header]  [dim]({note})[/dim]")
+
+
+def maybe_reset_local_history(old_url: Optional[str], new_url: str, yes: bool) -> None:
+    """Offer to drop this machine's git history when `init` repoints it at a
+    different repo than before.
+
+    Carrying the old repo's commits over is what used to send `push`/`pull`
+    down the wrong path: the new remote has unrelated history, so a plain
+    push gets rejected ("fetch first") and `suggest_next_step` reasons about
+    the wrong repo's state. A repo `init` has never pointed at before has
+    nothing to reset for.
+    """
+    if not old_url or old_url == new_url:
+        return
+    if git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0:
+        return  # nothing committed yet, nothing to lose
+    print_warn(
+        f"{BASE_DIR} still has git history from the previous backup repo ({sanitize_url(old_url)})."
+    )
+    if not yes:
+        if not sys.stdin.isatty():
+            print_warn(
+                "Keeping that history (not a terminal to confirm dropping it); pass --yes to drop it automatically."
+            )
+            return
+        try:
+            from rich.prompt import Confirm
+
+            if not Confirm.ask(
+                "Start fresh for the new repo (drop that local history)?",
+                default=True,
+                console=console,
+            ):
+                return
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+    shutil.rmtree(BASE_DIR / ".git")
+    if git(["init", "-b", BRANCH]).returncode != 0:
+        sys.exit(1)
+    set_remote(new_url)
+    print_success("Started a fresh local history for the new backup repo.")
+
+
+def suggest_next_step(url: str) -> tuple[str, str]:
+    """The command that matches this repo's state, plus the other one as a
+    short alternative: guessing wrong here is exactly what used to cause the
+    'fetch first' / 'Access is denied' tangle, so both stay visible."""
+    remote_has_commits = (
+        git(["ls-remote", "--exit-code", "--heads", url, BRANCH], capture=True).returncode == 0
+    )
+    if remote_has_commits:
+        return "skctl backup pull", "or push --force"
+    return "skctl backup push", "or pull"
+
+
+def untrack_if_tracked(rel_path: str) -> None:
+    """Drop a file or directory from the next commit without deleting it from disk.
+
+    Handles backups made before config.yaml/applied.json/cache were gitignored:
+    once tracked, `git add -A` keeps re-adding a file regardless of
+    .gitignore, so it must be explicitly untracked once.
+    """
+    res = git(["ls-files", rel_path], capture=True)
+    if res.returncode == 0 and res.stdout.strip():
+        git(["rm", "-r", "--cached", "-q", rel_path])
+
+
+def backup_push(
+    message: Optional[str],
+    repo: Optional[str],
+    public: bool,
+    include_config: bool = False,
+    force: bool = False,
+    yes: bool = False,
+) -> None:
+    # backup_init calls ensure_local_repo itself, so only the already-set-up
+    # path needs it here.
+    if not has_repo() or not remote_url():
+        backup_init(repo, public, yes)
+    else:
+        ensure_local_repo()
+
+    commit_presets(message or "backup presets", include_config)
+
+    url = remote_url()
+    push_args = ["push", "-u", "origin", BRANCH]
+    if force:
+        # Fetch first so --force-with-lease has a remote-tracking ref to
+        # compare against: it then refuses if the remote has moved again
+        # since, instead of blindly clobbering whatever is there right now.
+        git(["fetch", "origin", BRANCH], capture=True)
+        if not confirm_force_push(url, yes):
+            print_warn("Force-push cancelled.")
+            return
+        push_args.insert(1, "--force-with-lease")
+
+    print_header(f"Pushing {BASE_DIR} to {sanitize_url(url)}")
+    result = git(push_args, capture=True)
+    if result.returncode != 0:
+        console.print((result.stderr or result.stdout).rstrip())
+        explain_push_failure(result.stderr or "", url or "")
+        sys.exit(result.returncode)
+    print_success("Presets backed up.")
+
+
+def commit_presets(message: str, include_config: bool = False, presets_only: bool = False) -> None:
+    """Record local preset changes while keeping machine-specific files local."""
+    keep_empty_presets()
+    untrack_if_tracked("applied.json")
+    untrack_if_tracked("cache")
+    untrack_if_tracked(".metadata_cache.json")
+    if include_config:
+        if git(["add", "-f", "config.yaml"]).returncode != 0:
+            sys.exit(1)
+    else:
+        untrack_if_tracked("config.yaml")
+    if git(["add", "-A"]).returncode != 0:
+        sys.exit(1)
+    if presets_only:
+        paths = git(["ls-files", "-z"], capture=True)
+        if paths.returncode != 0:
+            sys.exit(paths.returncode)
+        for path in paths.stdout.split("\0"):
+            if path and path != ".gitignore" and not path.startswith("presets/"):
+                if git(["rm", "--cached", "-q", "--", path]).returncode != 0:
+                    sys.exit(1)
+
+    staged = git(["diff", "--cached", "--quiet"]).returncode
+    if staged == 0:
+        print_warn("Nothing changed since the last backup.")
+    elif staged != 1:
+        sys.exit(staged)
+    elif git(["commit", "-m", message]).returncode != 0:
+        sys.exit(1)
+
+
+def confirm_force_push(url: Optional[str], yes: bool) -> bool:
+    if yes:
+        return True
+    print_warn(
+        f"This overwrites {sanitize_url(url)} with what's here, permanently discarding any commits only it has."
+    )
+    if not sys.stdin.isatty():
+        return False
+    try:
+        from rich.prompt import Confirm
+
+        return Confirm.ask("Force-push anyway?", default=False, console=console)
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return False
+
+
+def explain_push_failure(stderr: str, url: str) -> None:
+    """Name the actual cause: git's own hint is about the wrong one more often than not."""
+    lowered = stderr.lower()
+    name = url.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1] or DEFAULT_REPO_NAME
+
+    if "not found" in lowered or "does not exist" in lowered:
+        print_error(f"{sanitize_url(url)} does not exist, or your account cannot see it.")
+        owner = github_login()
+        if owner:
+            console.print(
+                f"Create it (private) with: [header]skctl backup init --repo {name}[/header]"
+            )
+            console.print(
+                f"Your GitHub account is [bold]{owner}[/bold]; to point at an existing repo instead: "
+                f"[header]skctl backup init --repo {owner}/{name}[/header]"
+            )
+        else:
+            console.print(
+                f"Create it on github.com, then: [header]skctl backup init --repo owner/{name}[/header]"
+            )
+    elif (
+        "authentication" in lowered
+        or "could not read username" in lowered
+        or "permission denied" in lowered
+    ):
+        print_error("GitHub rejected your credentials.")
+        console.print(
+            "Log in with [header]gh auth login[/header], or use an SSH remote: "
+            "[header]skctl backup init --repo git@github.com:owner/name.git[/header]"
+        )
+    elif "non-fast-forward" in lowered or "fetch first" in lowered or "rejected" in lowered:
+        print_error("The backup has commits you do not have locally.")
+        console.print("Run: [header]skctl backup pull[/header]")
+    else:
+        print_error("Push failed; see the git output above.")
+
+
+def maybe_auto_push(what: str, background: bool = True) -> None:
+    """Push after a change to the presets, when backup.auto_push is on.
+
+    A backup failure must not fail the command the user actually ran, so this
+    swallows the exit `backup_push` raises and only warns.
+    """
+    if not load_config().get("backup", {}).get("auto_push"):
+        return
+    if not has_repo() or not remote_url():
+        return
+    if background:
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "skill_ctl.cli", "backup", "push", "-m", what],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return
+        except OSError:
+            pass
+    try:
+        with backup_lock():
+            backup_push(what, None, False)
+    except SystemExit:
+        print_warn("Auto-backup failed; run `skctl backup push` when you have a moment.")
+
+
+def github_login() -> Optional[str]:
+    """The logged-in gh account, when gh is available."""
+    if shutil.which("gh") is None:
+        return None
+    result = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def backup_pull(repo: Optional[str], yes: bool, dry_run: bool = False, force: bool = False) -> None:
+    if dry_run:
+        preview_backup_pull(repo)
+        return
+    if repo or not has_repo():
+        backup_init(repo, False, yes)
+    url = remote_url()
+    if not url:
+        print_error("No backup repository configured. Run: skctl backup init --repo owner/name")
+        sys.exit(1)
+
+    print_header(f"Fetching backup from {sanitize_url(url)}")
+    if git(["fetch", "origin", BRANCH]).returncode != 0:
+        sys.exit(1)
+
+    # An empty local repo means a restore: there is no history to merge onto, and
+    # whatever sits in ~/.skill-ctl now would block the checkout, so it is replaced.
+    # --force does the same replace even when local has its own commits, discarding them.
+    fresh = git(["rev-parse", "--verify", "HEAD"], capture=True).returncode != 0
+    if fresh or force:
+        if not yes:
+            if not sys.stdin.isatty():
+                print_error(
+                    "Replacing local presets requires confirmation; pass --yes to approve without a terminal."
+                )
+                sys.exit(1)
+            from rich.prompt import Confirm
+
+            console.print()
+            prompt = (
+                f"Replace the contents of {BASE_DIR} with the backup?"
+                if fresh
+                else f"Discard local commits not in the backup and replace {BASE_DIR} with it?"
+            )
+            try:
+                confirmed = Confirm.ask(f"[bold]{prompt}[/bold]", default=False, console=console)
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                sys.exit(0)
+            if not confirmed:
+                sys.exit(0)
+        if git(["checkout", "-f", "-B", BRANCH, f"origin/{BRANCH}"]).returncode != 0:
+            sys.exit(1)
+        print_success(f"Restored presets into {BASE_DIR}")
+        return
+
+    if git(["merge", "--ff-only", f"origin/{BRANCH}"]).returncode != 0:
+        print_error("Local presets have changes the backup does not.")
+        console.print(
+            "  [header]skctl backup push --force[/header]  (send your local changes up, overwriting the backup)"
+        )
+        console.print(
+            "  [header]skctl backup pull --force[/header]  (discard your local changes, take the backup's instead)"
+        )
+        console.print(f"  [header]cd {BASE_DIR} && git status[/header]  (or merge by hand)")
+        sys.exit(1)
+    print_success("Presets up to date with the backup.")
+
+
+def preview_backup_pull(repo: Optional[str] = None) -> None:
+    """Fetch and compare in a temporary repo, preserving all local Git state."""
+    if shutil.which("git") is None:
+        print_error("'git' not found on PATH. Install git and retry.")
+        sys.exit(1)
+    url = repo_url(repo) if repo else remote_url()
+    if not url:
+        print_error("No backup repository configured. Pass --repo owner/name to preview a backup.")
+        sys.exit(1)
+    print_header(f"Fetching backup preview from {sanitize_url(url)}")
+    with tempfile.TemporaryDirectory(prefix="skctl-restore-preview-") as directory:
+
+        def preview_git(args):
+            result = subprocess.run(
+                ["git", "-C", directory, *args],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if result.returncode != 0:
+                console.print((result.stderr or result.stdout).rstrip(), markup=False)
+                sys.exit(result.returncode)
+            return result
+
+        preview_git(["init", "--bare", "-q"])
+        preview_git(["fetch", "--quiet", "--no-tags", "--", url, f"{BRANCH}:refs/heads/incoming"])
+        head = git(["rev-parse", "--verify", "HEAD"], capture=True) if has_repo() else None
+        if head is not None and head.returncode == 0:
+            preview_git(["fetch", "--quiet", "--no-tags", str(BASE_DIR), "HEAD:refs/heads/local"])
+            output = preview_git(["diff", "--name-status", "local", "incoming"]).stdout
+            lines = [line for line in output.splitlines() if line.strip()]
+        else:
+            output = preview_git(["ls-tree", "-r", "--name-only", "incoming"]).stdout
+            lines = [f"A\t{path}" for path in output.splitlines() if path.strip()]
+    if not lines:
+        print_success("Restore preview: no file changes.")
+        return
+    print_header("Restore preview")
+    for line in lines:
+        status, path = line.split("\t", 1)
+        label = {"A": "add", "D": "remove", "M": "change"}.get(status[:1], status)
+        console.print(f"  {label:6} {path}")
+    print_warn(f"{len(lines)} file change(s); run `skctl backup pull` to apply them.")
+
+
+def backup_status() -> None:
+    if not has_repo():
+        print_warn(f"{BASE_DIR} is not backed up yet.")
+        console.print("Start with: [header]skctl backup init --repo owner/name[/header]")
+        return
+
+    url = remote_url()
+    print_header(f"Backup repository: {url or '(none configured)'}")
+    dirty = git(["status", "--short"], capture=True).stdout.strip()
+    if dirty:
+        changed = len(dirty.splitlines())
+        print_warn(f"{changed} uncommitted change{'s' if changed != 1 else ''} in {BASE_DIR}")
+        console.print(dirty if changed <= 20 else "\n".join(dirty.splitlines()[:20] + ["  ..."]))
+    else:
+        print_success("Everything is committed.")
+
+    if url:
+        counts = git(
+            ["rev-list", "--left-right", "--count", f"origin/{BRANCH}...HEAD"], capture=True
+        )
+        if counts.returncode == 0 and counts.stdout.split():
+            behind, ahead = counts.stdout.split()
+            if ahead != "0":
+                print_warn(f"{ahead} commit(s) not pushed yet. Run: skctl backup push")
+            if behind != "0":
+                print_warn(
+                    f"{behind} commit(s) on the backup you do not have. Run: skctl backup pull"
+                )
+            if ahead == behind == "0" and not dirty:
+                print_success("Backup is current.")

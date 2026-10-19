@@ -22,25 +22,27 @@ from skill_ctl.theme import install_typer_styling
 from skill_ctl.ui import console, set_theme
 
 SUBCOMMAND_LOADERS = {
-    "add": ("skill_ctl.skills", "add"),
-    "apply": ("skill_ctl.presets", "apply"),
-    "unapply": ("skill_ctl.presets", "unapply"),
-    "diff": ("skill_ctl.diff", "diff_cmd"),
-    "presets": ("skill_ctl.presets", "presets"),
-    "status": ("skill_ctl.status", "status"),
-    "list": ("skill_ctl.skills", "list_skills"),
-    "info": ("skill_ctl.skills", "info"),
-    "remove": ("skill_ctl.skills", "remove"),
-    "update": ("skill_ctl.skills", "update"),
-    "search": ("skill_ctl.search", "search"),
-    "config": ("skill_ctl.config_commands", "config_cmd"),
-    "theme": ("skill_ctl.config_commands", "theme_cmd"),
-    "backup": ("skill_ctl.backup", "backup"),
-    "sync": ("skill_ctl.sync", "sync"),
-    "doctor": ("skill_ctl.doctor", "doctor"),
-    "completion": ("skill_ctl.completion", "completion"),
-    "self-update": ("skill_ctl.self_update", "self_update"),
+    "add": ("skill_ctl.commands.skills", "add"),
+    "apply": ("skill_ctl.commands.presets", "apply"),
+    "unapply": ("skill_ctl.commands.presets", "unapply"),
+    "diff": ("skill_ctl.commands.diff", "diff_cmd"),
+    "presets": ("skill_ctl.commands.presets", "presets"),
+    "status": ("skill_ctl.commands.status", "status"),
+    "list": ("skill_ctl.commands.skills", "list_skills"),
+    "info": ("skill_ctl.commands.skills", "info"),
+    "remove": ("skill_ctl.commands.skills", "remove"),
+    "update": ("skill_ctl.commands.skills", "update"),
+    "search": ("skill_ctl.commands.search", "search"),
+    "config": ("skill_ctl.commands.config_commands", "config_cmd"),
+    "theme": ("skill_ctl.commands.config_commands", "theme_cmd"),
+    "backup": ("skill_ctl.commands.backup", "backup"),
+    "sync": ("skill_ctl.commands.sync", "sync"),
+    "doctor": ("skill_ctl.commands.doctor", "doctor"),
+    "completion": ("skill_ctl.commands.completion", "completion"),
+    "self-update": ("skill_ctl.commands.self_update", "self_update"),
 }
+
+
 
 _LAZY_EXPORTS = {
     **{func_name: (mod_name, func_name) for mod_name, func_name in SUBCOMMAND_LOADERS.values()},
