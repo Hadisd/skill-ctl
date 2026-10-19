@@ -206,45 +206,89 @@ def search(
 
         from skill_ctl.catalog import choose as choose_catalog_skill, inspect as inspect_catalog_skill
 
-        selected = choose_catalog_skill(query or "", owner, remotes=remotes_filter, **catalog_kwargs)
-        if not selected or not inspect_catalog_skill(selected):
-            return
+        cart: list[dict] = []
+        current_query = query or ""
 
-        action = selected[0].get("_action") if selected else None
-        target_preset = preset
-        is_global = global_only or (action == "alt-g")
-
-        if action == "alt-p" and not target_preset:
-            from skill_ctl.constants import PRESETS_DIR
-            from skill_ctl.prompts import prompt_preset_or_new
-            names = sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir()) if PRESETS_DIR.is_dir() else []
-            config = load_config()
-            default_p = config.get("default_preset", "default")
-            target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR)
-            if not target_preset:
-                print_warn("No preset selected; installation cancelled.")
-                return
-        elif not target_preset and not is_global and not project:
-            config = load_config()
-            default_dest = config.get("default_destination", "prompt")
-            ask_dest = config.get("prompts", {}).get("ask_destination", True)
-            default_p = config.get("default_preset", "default")
-
-            should_prompt = (action == "alt-a") or (ask_dest and default_dest == "prompt")
-            if should_prompt and sys.stdin.isatty():
-                from skill_ctl.constants import PRESETS_DIR
-                from skill_ctl.prompts import prompt_destination
-                target_preset, is_project, is_global = prompt_destination(
-                    PRESETS_DIR, default_preset=default_p, target_project=Path.cwd()
-                )
-                if not is_project and not target_preset and not is_global:
-                    print_warn("Installation cancelled.")
+        while True:
+            if not cart:
+                selected = choose_catalog_skill(current_query, owner, remotes=remotes_filter, **catalog_kwargs)
+                if not selected or not inspect_catalog_skill(selected):
                     return
-            elif not should_prompt:
-                if default_dest == "global":
-                    is_global = True
-                elif default_dest == "preset":
-                    target_preset = default_p
+                for item in selected:
+                    key = (item.get("source") or item.get("id"), item.get("name"))
+                    if not any((c.get("source") or c.get("id"), c.get("name")) == key for c in cart):
+                        cart.append(item)
+
+            action = cart[0].get("_action") if cart else None
+            target_preset = preset
+            is_global = global_only or (action == "alt-g")
+            is_project = bool(project)
+
+            names_list = [c.get("name", "") for c in cart if c.get("name")]
+            summary_str = ", ".join(names_list) if len(names_list) <= 3 else f"{len(names_list)} skills ({', '.join(names_list[:3])}...)"
+
+            if action == "alt-p" and not target_preset:
+                from skill_ctl.constants import PRESETS_DIR
+                from skill_ctl.prompts import prompt_preset_or_new
+                names = sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir()) if PRESETS_DIR.is_dir() else []
+                config = load_config()
+                default_p = config.get("default_preset", "default")
+                target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR, allow_back=True)
+                if target_preset == "back":
+                    cart.clear()
+                    continue
+                if not target_preset:
+                    print_warn("No preset selected; installation cancelled.")
+                    return
+            elif not target_preset and not is_global and not is_project:
+                config = load_config()
+                default_dest = config.get("default_destination", "prompt")
+                ask_dest = config.get("prompts", {}).get("ask_destination", True)
+                default_p = config.get("default_preset", "default")
+
+                should_prompt = (action == "alt-a") or (ask_dest and default_dest == "prompt")
+                if should_prompt and sys.stdin.isatty():
+                    from skill_ctl.constants import PRESETS_DIR
+                    from skill_ctl.prompts import prompt_destination
+                    dest_res = prompt_destination(
+                        PRESETS_DIR,
+                        default_preset=default_p,
+                        target_project=Path.cwd(),
+                        allow_back=True,
+                        allow_add_more=True,
+                        selected_summary=summary_str,
+                    )
+                    target_preset, is_project, is_global = dest_res
+                    if target_preset == "back":
+                        cart.clear()
+                        continue
+                    if target_preset == "add_more":
+                        from rich.prompt import Prompt
+                        try:
+                            more_q = Prompt.ask("[bold]Enter search term to add more skills[/bold] (leave blank to browse)", console=console).strip()
+                        except (EOFError, KeyboardInterrupt):
+                            console.print()
+                            return
+                        current_query = more_q
+                        more_selected = choose_catalog_skill(current_query, owner, remotes=remotes_filter, **catalog_kwargs)
+                        if more_selected and inspect_catalog_skill(more_selected):
+                            for item in more_selected:
+                                key = (item.get("source") or item.get("id"), item.get("name"))
+                                if not any((c.get("source") or c.get("id"), c.get("name")) == key for c in cart):
+                                    cart.append(item)
+                        continue
+                    if not is_project and not target_preset and not is_global:
+                        print_warn("Installation cancelled.")
+                        return
+                elif not should_prompt:
+                    if default_dest == "global":
+                        is_global = True
+                    elif default_dest == "preset":
+                        target_preset = default_p
+
+            break
+
+        selected = cart
 
         by_source: dict[str, list[str]] = {}
         for skill in selected:

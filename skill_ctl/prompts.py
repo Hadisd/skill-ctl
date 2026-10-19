@@ -44,16 +44,27 @@ def _use_preset_picker(count: int, config: dict) -> bool:
 
 
 def _browse_preset_choices(
-    choices: list[str], config: dict, presets_dir: Optional[Path], extra: tuple[str, str], default_preset: Optional[str] = None,
+    choices: list[str],
+    config: dict,
+    presets_dir: Optional[Path],
+    extra: tuple[str, str],
+    default_preset: Optional[str] = None,
+    allow_back: bool = False,
 ) -> Optional[int]:
     with tempfile.TemporaryDirectory(prefix="skctl-preset-picker-") as temporary:
         previews = Path(temporary)
+        rows = []
+        if allow_back:
+            back_preview = previews / "back"
+            back_preview.write_text("# Back\n\nReturn to previous menu.\n", encoding="utf-8")
+            rows.append(f"-1\tBack (return to previous menu)\t{back_preview}")
+
         extra_preview = previews / "extra"
         extra_text = extra[1]
         if not extra_text.startswith("#"):
             extra_text = f"# {extra[0]}\n\n{extra_text}"
         extra_preview.write_text(extra_text.strip() + "\n", encoding="utf-8")
-        rows = [f"0\t{extra[0]}\t{extra_preview}"]
+        rows.append(f"0\t{extra[0]}\t{extra_preview}")
         applied_map = load_applied()
         for index, name in enumerate(choices, 1):
             preset_dir = presets_dir / name if presets_dir else None
@@ -97,7 +108,10 @@ def _browse_preset_choices(
             input="\n".join(rows), stdout=subprocess.PIPE, text=True,
             encoding="utf-8", errors="replace",
         )
-        return int(result.stdout.partition("\t")[0]) if result.returncode == 0 else None
+        if result.returncode != 0:
+            return -1 if allow_back else None
+        val = result.stdout.partition("\t")[0]
+        return int(val) if (val.isdigit() or (val.startswith("-") and val[1:].isdigit())) else None
 
 
 def prompt_apply_destination(target_project: Path) -> str:
@@ -184,17 +198,29 @@ def prompt_skills(names: list[str], action: str = "apply") -> list[str]:
 
 
 def prompt_preset_or_new(
-    names: list[str], default_preset: str = "default", presets_dir: Optional[Path] = None,
+    names: list[str],
+    default_preset: str = "default",
+    presets_dir: Optional[Path] = None,
+    allow_back: bool = False,
 ) -> Optional[str]:
     choices = [default_preset] + [name for name in names if name != default_preset]
     config = load_config()
     if _use_preset_picker(len(choices), config):
         selected = _browse_preset_choices(
-            choices, config, presets_dir, ("Create new preset", "Create an empty preset, then name it."), default_preset,
+            choices,
+            config,
+            presets_dir,
+            extra=("Create new preset", "Create an empty preset, then name it."),
+            default_preset=default_preset,
+            allow_back=allow_back,
         )
+        if selected == -1 or (selected is None and allow_back):
+            return "back"
         if selected is None:
             return None
-        return prompt_new_preset_name() if selected == 0 else choices[selected - 1]
+        if selected == 0:
+            return prompt_new_preset_name()
+        return choices[selected - 1]
 
     console.print(f"  [header]0)[/header] [path]Create new preset[/path]")
     for index, name in enumerate(choices, 1):
@@ -202,9 +228,13 @@ def prompt_preset_or_new(
             console.print(f"  [choice]{index})[/choice] {name} [dim]*[/dim]")
         else:
             console.print(f"  [choice]{index})[/choice] {name}")
+    if allow_back:
+        console.print(f"  [choice]b)[/choice] Back")
     default_index = "1"
     while True:
         picked = _ask("[bold]Preset (number or name)[/bold]", default=default_index)
+        if allow_back and picked.lower() in ("b", "back"):
+            return "back"
         if not picked.isdigit():
             if picked:
                 return picked
@@ -230,6 +260,9 @@ def prompt_destination(
     presets_dir: Path,
     default_preset: str = "default",
     target_project: Optional[Path] = None,
+    allow_back: bool = False,
+    allow_add_more: bool = False,
+    selected_summary: Optional[str] = None,
 ) -> tuple[Optional[str], bool, bool]:
     presets_dir.mkdir(parents=True, exist_ok=True)
     names = sorted(path.name for path in presets_dir.iterdir() if path.is_dir())
@@ -240,15 +273,39 @@ def prompt_destination(
         proj_label = str(proj)
 
     console.print()
+    if selected_summary:
+        console.print(f"[bold]Selected:[/bold] [header]{selected_summary}[/header]")
     console.print("[dim]Where would you like to install?[/dim]")
     console.print(f"  [choice]1)[/choice] Current project [dim]({proj_label}; default)[/dim]")
     console.print(f"  [choice]2)[/choice] Preset [dim](~/.skill-ctl/presets/...)[/dim]")
     console.print("  [choice]3)[/choice] Global [dim](~/.agents/skills, ~/.claude/skills, ...)[/dim]")
-    choice = _ask("[bold]Choose destination[/bold]", choices=["1", "2", "3"], default="1")
+    choices = ["1", "2", "3"]
+    if allow_add_more:
+        console.print("  [choice]+)[/choice] Search & add another skill")
+        choices.extend(["+", "add", "more"])
+    if allow_back:
+        console.print("  [choice]b)[/choice] Back to skill search")
+        choices.extend(["b", "back"])
+
+    choice = _ask("[bold]Choose destination[/bold]", choices=choices, default="1")
+    if choice in ("b", "back"):
+        return "back", False, False
+    if choice in ("+", "add", "more"):
+        return "add_more", False, False
     if choice == "1":
         return None, True, False
     if choice == "2":
-        return prompt_preset_or_new(names, default_preset, presets_dir), False, False
+        p_name = prompt_preset_or_new(names, default_preset, presets_dir, allow_back=allow_back)
+        if p_name == "back":
+            return prompt_destination(
+                presets_dir,
+                default_preset=default_preset,
+                target_project=target_project,
+                allow_back=allow_back,
+                allow_add_more=allow_add_more,
+                selected_summary=selected_summary,
+            )
+        return p_name, False, False
     return None, False, True
 
 

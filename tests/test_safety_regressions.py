@@ -661,3 +661,199 @@ def test_theme_resolution_and_aliases():
     assert t.styles["header"].color.triplet.hex == "#cba6f7"
 
 
+def test_smart_headless_multiple_skills_selection(tmp_path, monkeypatch):
+    """When a package has multiple skills, user picks via choose_repo_skills and npx runs headlessly."""
+    from unittest.mock import patch
+    import sys
+    from skill_ctl import skills as skills_mod
+
+    preset_dir = tmp_path / "presets" / "frontend"
+    preset_dir.mkdir(parents=True)
+    monkeypatch.setattr(skills_mod, "ensure_preset_dir", lambda name: preset_dir)
+    monkeypatch.setattr(skills_mod, "maybe_auto_push", lambda reason: None)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    npx_calls = []
+
+    def fake_run_npx_skills(args, cwd):
+        npx_calls.append((args, cwd))
+        return 0
+
+    monkeypatch.setattr(skills_mod, "run_npx_skills", fake_run_npx_skills)
+
+    with patch("skill_ctl.catalog.fetch_repo_skills", return_value=["react-patterns", "web-design", "a11y"]):
+        with patch("skill_ctl.catalog.choose_repo_skills", return_value=["react-patterns", "web-design"]):
+            skills_mod.add(package="owner/repo", preset="frontend")
+
+    assert len(npx_calls) == 1
+    args, cwd = npx_calls[0]
+    assert args == [
+        "add",
+        "owner/repo",
+        "--skill", "react-patterns",
+        "--skill", "web-design",
+        "--agent", "universal",
+        "-y",
+    ]
+    assert cwd == str(preset_dir)
+
+
+def test_smart_headless_single_skill_auto_selection(tmp_path, monkeypatch):
+    """When a package has exactly 1 skill, it is auto-selected and run headlessly."""
+    from unittest.mock import patch
+    import sys
+    from skill_ctl import skills as skills_mod
+
+    preset_dir = tmp_path / "presets" / "default"
+    preset_dir.mkdir(parents=True)
+    monkeypatch.setattr(skills_mod, "ensure_preset_dir", lambda name: preset_dir)
+    monkeypatch.setattr(skills_mod, "maybe_auto_push", lambda reason: None)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    npx_calls = []
+
+    def fake_run_npx_skills(args, cwd):
+        npx_calls.append((args, cwd))
+        return 0
+
+    monkeypatch.setattr(skills_mod, "run_npx_skills", fake_run_npx_skills)
+
+    with patch("skill_ctl.catalog.fetch_repo_skills", return_value=["only-one-skill"]):
+        skills_mod.add(package="owner/single-skill-repo", preset="default")
+
+    assert len(npx_calls) == 1
+    args, cwd = npx_calls[0]
+    assert args == [
+        "add",
+        "owner/single-skill-repo",
+        "--skill", "only-one-skill",
+        "--agent", "universal",
+        "-y",
+    ]
+
+
+def test_smart_headless_user_cancellation(tmp_path, monkeypatch):
+    """When user cancels skill selection in fzf, add() aborts cleanly without calling npx skills."""
+    from unittest.mock import patch
+    import sys
+    from skill_ctl import skills as skills_mod
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    npx_calls = []
+    monkeypatch.setattr(skills_mod, "run_npx_skills", lambda args, cwd: npx_calls.append(args))
+
+    with patch("skill_ctl.catalog.fetch_repo_skills", return_value=["skill1", "skill2"]):
+        with patch("skill_ctl.catalog.choose_repo_skills", return_value=[]):
+            skills_mod.add(package="owner/repo", preset="frontend")
+
+    assert len(npx_calls) == 0
+
+
+def test_smart_headless_fallback_when_fetch_empty(tmp_path, monkeypatch):
+    """When fetch_repo_skills returns empty (e.g. offline/unknown), falls back to normal flow."""
+    from unittest.mock import patch
+    import sys
+    from skill_ctl import skills as skills_mod
+
+    preset_dir = tmp_path / "presets" / "frontend"
+    preset_dir.mkdir(parents=True)
+    monkeypatch.setattr(skills_mod, "ensure_preset_dir", lambda name: preset_dir)
+    monkeypatch.setattr(skills_mod, "maybe_auto_push", lambda reason: None)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    npx_calls = []
+    monkeypatch.setattr(skills_mod, "run_npx_skills", lambda args, cwd: (npx_calls.append(args), 0)[1])
+
+    with patch("skill_ctl.catalog.fetch_repo_skills", return_value=[]):
+        skills_mod.add(package="unknown-package", preset="frontend")
+
+    assert len(npx_calls) == 1
+    args = npx_calls[0]
+    assert args == ["add", "unknown-package", "--agent", "universal"]
+
+
+def test_search_remote_back_navigation_loops_to_reselect(monkeypatch, tmp_path):
+    """Choosing 'b' (Back) at destination prompt resets cart and lets user re-pick."""
+    import sys
+    from skill_ctl import search as search_mod
+
+    npx_calls = []
+    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    call_count = {"choose": 0, "dest": 0}
+
+    def fake_choose(query="", owner=None, remotes=None, **kwargs):
+        call_count["choose"] += 1
+        if call_count["choose"] == 1:
+            return [{"source": "wrong/repo", "name": "wrong-skill", "_action": "alt-a"}]
+        return [{"source": "right/repo", "name": "right-skill", "_action": "alt-a"}]
+
+    def fake_prompt_dest(presets_dir, default_preset="default", target_project=None, allow_back=False, allow_add_more=False, selected_summary=None):
+        call_count["dest"] += 1
+        if call_count["dest"] == 1:
+            return ("back", False, False)
+        return ("my-preset", False, False)
+
+    monkeypatch.setattr("skill_ctl.catalog.choose", fake_choose)
+    monkeypatch.setattr("skill_ctl.catalog.inspect", lambda skills: True)
+    monkeypatch.setattr("skill_ctl.prompts.prompt_destination", fake_prompt_dest)
+
+    presets_dir = tmp_path / "presets"
+    monkeypatch.setattr(search_mod, "PRESETS_DIR", presets_dir)
+
+    search_mod.search(remote_only=True)
+
+    assert call_count["choose"] == 2
+    assert call_count["dest"] == 2
+    assert len(npx_calls) == 1
+    args, _ = npx_calls[0]
+    assert "right/repo" in args
+    assert "wrong/repo" not in args
+
+
+def test_search_remote_add_more_accumulates_in_cart(monkeypatch, tmp_path):
+    """Choosing '+' (Add more) at destination prompt accumulates multiple skills into cart."""
+    import sys
+    from skill_ctl import search as search_mod
+    from rich.prompt import Prompt
+
+    npx_calls = []
+    monkeypatch.setattr(search_mod, "run_npx_skills", lambda args, cwd: npx_calls.append((args, cwd)) or 0)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    call_count = {"choose": 0, "dest": 0}
+
+    def fake_choose(query="", owner=None, remotes=None, **kwargs):
+        call_count["choose"] += 1
+        if call_count["choose"] == 1:
+            return [{"source": "owner/repo-a", "name": "skill-a", "_action": "alt-a"}]
+        return [{"source": "owner/repo-b", "name": "skill-b", "_action": "alt-a"}]
+
+    def fake_prompt_dest(presets_dir, default_preset="default", target_project=None, allow_back=False, allow_add_more=False, selected_summary=None):
+        call_count["dest"] += 1
+        if call_count["dest"] == 1:
+            return ("add_more", False, False)
+        return ("my-preset", False, False)
+
+    monkeypatch.setattr("skill_ctl.catalog.choose", fake_choose)
+    monkeypatch.setattr("skill_ctl.catalog.inspect", lambda skills: True)
+    monkeypatch.setattr("skill_ctl.prompts.prompt_destination", fake_prompt_dest)
+    monkeypatch.setattr(Prompt, "ask", lambda *args, **kwargs: "second search")
+
+    presets_dir = tmp_path / "presets"
+    monkeypatch.setattr(search_mod, "PRESETS_DIR", presets_dir)
+
+    search_mod.search(remote_only=True)
+
+    assert call_count["choose"] == 2
+    assert call_count["dest"] == 2
+    assert len(npx_calls) == 2
+    installed_packages = [c[0][1] for c in npx_calls]
+    assert "owner/repo-a" in installed_packages
+    assert "owner/repo-b" in installed_packages
+
+
+
+
