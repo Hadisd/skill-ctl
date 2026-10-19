@@ -75,6 +75,8 @@ complete -c skctl -n '__skctl_using search' -l npx -d "Use npx skills' own finde
 complete -c skctl -n '__skctl_using search' -l owner -x -d 'Search one GitHub owner'
 complete -c skctl -n '__skctl_using search' -s r -l remote -d 'Search remote catalogs (skills.sh, skillsmp, all)'
 complete -c skctl -n '__skctl_using update' -l all -d 'Update every preset'
+complete -c skctl -n '__skctl_using update' -l prune -d 'Remove local skills deleted upstream'
+complete -c skctl -n '__skctl_using update' -l keep-deleted -d 'Keep local skills deleted upstream and decouple from lockfile'
 complete -c skctl -n '__skctl_using self-update' -l check -d 'Check for an available update'
 complete -c skctl -n '__skctl_using search' -s g -l global -d 'Search only global skill folders'
 complete -c skctl -n '__skctl_using apply' -s A -l all-presets -d 'Choose from every preset at once'
@@ -113,7 +115,7 @@ _skctl() {{
     case "${{COMP_WORDS[1]}}" in
         apply) COMPREPLY=( $(compgen -W "$presets --pick --all-presets --global --force --resync --dry-run" -- "$cur") ) ;;
         status) COMPREPLY=( $(compgen -W "--project --global --all --verbose --json --help" -- "$cur") ) ;;
-        update) COMPREPLY=( $(compgen -W "$presets --preset --global --all --yes" -- "$cur") ) ;;
+        update) COMPREPLY=( $(compgen -W "$presets --preset --global --all --yes --prune --keep-deleted" -- "$cur") ) ;;
         self-update) COMPREPLY=( $(compgen -W "--check --yes" -- "$cur") ) ;;
         unapply) COMPREPLY=( $(compgen -W "$presets --global --force --yes" -- "$cur") ) ;;
         search) COMPREPLY=( $(compgen -W "--preset --global --local --remote --owner --applied --json --npx skills.sh skillsmp all" -- "$cur") ) ;;
@@ -156,7 +158,7 @@ _skctl() {{
     case "$words[2]" in
         apply) _arguments '--dry-run[Preview changes without writing files]' '--pick[Choose skills]' '--all-presets[Choose from all presets]' '--global[Apply skills globally]' '--force[Replace existing skills]' '--resync[Reapply recorded skills]' '*:preset:_skctl_presets' ;;
         status) _values 'option' --project --global --all --verbose --json ;;
-        update) _values 'option' --preset --global --all --yes ;;
+        update) _values 'option' --preset --global --all --yes --prune --keep-deleted ;;
         self-update) _values 'option' --check --yes ;;
         unapply) _arguments '--global[Remove preset skills globally]' '--force[Delete real directories]' '--yes[Skip confirmation]' '*:preset:_skctl_presets' ;;
         search) _values 'option' --preset --global --local --remote --owner --applied --json --npx ;;

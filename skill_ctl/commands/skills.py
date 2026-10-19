@@ -12,11 +12,13 @@ from rich.prompt import Confirm
 from skill_ctl.backup import maybe_auto_push
 from skill_ctl.config import load_config
 from skill_ctl.constants import PRESETS_DIR
+from skill_ctl.core.linker import prune_lockfile
 from skill_ctl.picker import DEFAULT_HEADER, pick, rows_for, wants_picker
 from skill_ctl.presets import (
     ensure_preset_dir,
     get_preset_skills,
     preset_path,
+    remove_skills_from_preset,
 )
 from skill_ctl.prompts import prompt_destination, prompt_skills
 from skill_ctl.runner import get_detected_global_agents, run_npx_skills
@@ -426,6 +428,87 @@ def remove(
         sys.exit(code)
 
 
+def parse_deleted_upstream_skills(output: str) -> list[str]:
+    """Parse skill names flagged as deleted upstream from npx skills output."""
+    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", output)
+    skills = []
+    for match in re.finditer(
+        r"appear to have been deleted upstream:\s*\n((?:\s*[•\-\*\u2022\u25cf\u00b7]\s*[\w\-\.]+\s*\n)+)",
+        clean,
+    ):
+        for line in match.group(1).strip().splitlines():
+            s = re.sub(r"^[•\-\*\s\u2022\u25cf\u00b7]+", "", line).strip()
+            if s and s not in skills:
+                skills.append(s)
+    return skills
+
+
+def handle_upstream_deletions(
+    target_dir: Path,
+    output: str,
+    prune: bool = False,
+    keep_deleted: bool = False,
+    interactive: bool = False,
+) -> list[str]:
+    """Handle skills that were detected as deleted upstream during update."""
+    deleted = parse_deleted_upstream_skills(output)
+    if not deleted:
+        return []
+
+    action = None
+    if prune:
+        action = "prune"
+    elif keep_deleted:
+        action = "keep"
+    elif interactive and sys.stdin.isatty():
+        from rich.prompt import Prompt
+
+        console.print(
+            f"\n[yellow]Detected {len(deleted)} upstream-deleted skill(s):[/yellow] {', '.join(deleted)}"
+        )
+        choice = Prompt.ask(
+            "How would you like to handle them? [bold](k)[/bold]eep locally, [bold](p)[/bold]rune, [bold](s)[/bold]kip",
+            choices=["k", "p", "s"],
+            default="k",
+        )
+        if choice == "p":
+            action = "prune"
+        elif choice == "k":
+            action = "keep"
+
+    if action == "prune":
+        remove_skills_from_preset(target_dir, deleted)
+        print_success(f"Pruned {len(deleted)} upstream-deleted skill(s): {', '.join(deleted)}")
+    elif action == "keep":
+        prune_lockfile(target_dir, set(deleted))
+        print_success(
+            f"Decoupled {len(deleted)} skill(s) from skills-lock.json (kept locally): {', '.join(deleted)}"
+        )
+    return deleted
+
+
+def _run_update_in_dir(
+    args: list[str],
+    cwd: Path,
+    target_dir: Optional[Path] = None,
+    prune: bool = False,
+    keep_deleted: bool = False,
+    interactive: bool = False,
+    stream: bool = True,
+) -> tuple[int, list[str]]:
+    """Run npx skills update in cwd, stream output, and handle any upstream deletions."""
+    target = target_dir or cwd
+    try:
+        res = run_npx_skills(args, cwd=str(cwd), capture=True, stream=stream)
+    except TypeError:
+        res = run_npx_skills(args, cwd=str(cwd))
+    code, out = res if isinstance(res, tuple) else (res, "")
+    deleted = handle_upstream_deletions(
+        target, out, prune=prune, keep_deleted=keep_deleted, interactive=interactive
+    )
+    return code, deleted
+
+
 def update(
     skill: Annotated[Optional[str], typer.Argument()] = None,
     preset: Annotated[
@@ -444,12 +527,30 @@ def update(
             "--concurrency", "-j", help="Number of presets to update concurrently with --all."
         ),
     ] = 4,
+    prune: Annotated[
+        bool,
+        typer.Option(
+            "--prune",
+            help="Automatically remove local skills that have been deleted upstream.",
+        ),
+    ] = False,
+    keep_deleted: Annotated[
+        bool,
+        typer.Option(
+            "--keep-deleted",
+            help="Keep local files for upstream-deleted skills and decouple them from skills-lock.json.",
+        ),
+    ] = False,
 ) -> None:
     """Update skills to latest versions via npx skills update."""
+    if prune and keep_deleted:
+        print_error("--prune and --keep-deleted cannot be used together.")
+        sys.exit(1)
+
     args = ["update"]
     if skill:
         args.append(skill)
-    if yes:
+    if yes or prune or keep_deleted:
         args.append("-y")
 
     if all_presets and (preset or global_update):
@@ -478,7 +579,15 @@ def update(
         if len(updateable) <= 1 or concurrency <= 1:
             for path in updateable:
                 print_header(f"Updating preset '{path.name}'")
-                if run_npx_skills(args, cwd=str(path)) != 0:
+                code, _ = _run_update_in_dir(
+                    args,
+                    path,
+                    prune=prune,
+                    keep_deleted=keep_deleted,
+                    interactive=(not yes),
+                    stream=True,
+                )
+                if code != 0:
                     failed.append(path.name)
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -486,13 +595,21 @@ def update(
             workers = min(len(updateable), max(1, concurrency))
             print_header(f"Updating {len(updateable)} presets concurrently ({workers} workers)")
 
-            def update_one(p: Path) -> tuple[str, int]:
-                return p.name, run_npx_skills(args, cwd=str(p))
+            def update_one(p: Path) -> tuple[str, int, list[str]]:
+                code, deleted = _run_update_in_dir(
+                    args,
+                    p,
+                    prune=prune,
+                    keep_deleted=keep_deleted,
+                    interactive=False,
+                    stream=False,
+                )
+                return p.name, code, deleted
 
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(update_one, path): path for path in updateable}
                 for fut in as_completed(futures):
-                    p_name, code = fut.result()
+                    p_name, code, _ = fut.result()
                     if code != 0:
                         failed.append(p_name)
                     else:
@@ -523,13 +640,29 @@ def update(
                 f"`skctl add <pkg> --preset {preset}` to record their sources."
             )
             sys.exit(1)
-        code = run_npx_skills(args, cwd=str(p))
+        code, _ = _run_update_in_dir(
+            args,
+            p,
+            prune=prune,
+            keep_deleted=keep_deleted,
+            interactive=(not yes),
+            stream=True,
+        )
         if code == 0:
             maybe_auto_push(f"update {preset}")
     else:
+        target_dir = Path.home() if global_update else Path.cwd()
         if global_update:
             args.append("-g")
-        code = run_npx_skills(args, cwd=str(Path.cwd()))
+        code, _ = _run_update_in_dir(
+            args,
+            cwd=Path.cwd(),
+            target_dir=target_dir,
+            prune=prune,
+            keep_deleted=keep_deleted,
+            interactive=(not yes),
+            stream=True,
+        )
     if code != 0:
         sys.exit(code)
 

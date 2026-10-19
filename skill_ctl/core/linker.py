@@ -115,6 +115,11 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
 def prune_lockfile(project: Path, removed_names: set[str]) -> int:
     """Remove deleted skills from a project's skills.sh lockfile."""
     lock = project / "skills-lock.json"
+    if not lock.is_file():
+        for alt in (project / ".skill-lock.json", project / ".agents" / ".skill-lock.json"):
+            if alt.is_file():
+                lock = alt
+                break
     if not removed_names or not lock.is_file():
         return 0
     data = json.loads(lock.read_text(encoding="utf-8"))

@@ -3,9 +3,10 @@
 import os
 import shutil
 import subprocess
+import sys
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from skill_ctl.core.config import load_config
 
@@ -34,7 +35,12 @@ REGISTER_MJS = (
 )
 
 
-def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
+def run_npx_skills(
+    args: list[str],
+    cwd: Optional[str] = None,
+    capture: bool = False,
+    stream: bool = True,
+) -> Union[int, tuple[int, str]]:
     """Executes npx skills with the given arguments in the given cwd."""
     cmd_args = list(args)
     env = dict(os.environ)
@@ -65,7 +71,7 @@ def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
     npx = shutil.which("npx")
     if npx is None:
         warnings.warn("'npx' not found on PATH. Install Node.js and retry.", RuntimeWarning)
-        return 1
+        return (1, "") if capture else 1
 
     # If -y / --yes is not passed, ensure npx skills runs interactively by clearing
     # AI agent detection env vars so it prompts the user for agent selection.
@@ -79,5 +85,26 @@ def run_npx_skills(args: list[str], cwd: Optional[str] = None) -> int:
             "CODEX_SANDBOX",
         ):
             env.pop(k, None)
+
+    if capture:
+        proc = subprocess.Popen(
+            [npx, "skills"] + cmd_args,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        lines = []
+        if proc.stdout:
+            for line in iter(proc.stdout.readline, ""):
+                if stream:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                lines.append(line)
+        code = proc.wait()
+        return code, "".join(lines)
 
     return subprocess.run([npx, "skills"] + cmd_args, cwd=cwd, env=env).returncode

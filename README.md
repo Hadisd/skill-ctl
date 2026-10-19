@@ -175,8 +175,8 @@ skctl rm                   # choose installed skills to remove
 | `skctl search [query] --applied` | Show skills available to the current project |
 | `skctl search [query] --json` | Print full results as JSON |
 | `skctl remove [skill] [--preset <name>]` | Remove a skill or open the removal picker |
-| `skctl update [skill]` | Update project skills |
-| `skctl update --preset <name>` | Update a preset |
+| `skctl update [skill]` | Update project skills (`--prune` or `--keep-deleted` handles upstream deletions) |
+| `skctl update --preset <name>` | Update a preset (`--prune` or `--keep-deleted`) |
 | `skctl update --all` | Update every preset with source metadata |
 | `skctl update -g` | Update global skills |
 | `skctl self-update [--check\|--yes]` | Update the skctl CLI from its latest release |
@@ -498,7 +498,14 @@ skctl update tdd
 skctl update --preset frontend
 skctl update --all
 skctl update -g
+skctl update --preset feynman --keep-deleted
+skctl update --preset feynman --prune
 ```
+
+When an upstream Git repository deletes or renames skills that you installed, `skctl update` detects them. Use:
+- `--keep-deleted`: Keeps your local files intact in the preset and decouples them from `skills-lock.json` so update warnings cease.
+- `--prune`: Automatically deletes local skill folders and removes them from `skills-lock.json`.
+- In interactive terminal mode without flags, `skctl update` will prompt you to choose between keeping, pruning, or skipping.
 
 A preset needs `skills-lock.json` before it can update. `--all` skips older presets without one and names them in its output. Re-add old preset skills through `skctl add <pkg> --preset <name>` if the lock file is missing.
 

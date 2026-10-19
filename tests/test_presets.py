@@ -1348,6 +1348,97 @@ def test_update_all_updates_locked_presets_and_skips_legacy_ones(env, monkeypatc
     assert calls == [(["update"], str(locked))]
 
 
+def test_update_parse_deleted_upstream_skills():
+    from skill_ctl.commands.skills import parse_deleted_upstream_skills
+
+    raw_output = """
+\x1b[2mWarning:\x1b[0m The following skills from \x1b[2madvaitpaliwal/feynman\x1b[0m appear to have been deleted upstream:
+  \x1b[2m•\x1b[0m alphafold2
+  \x1b[2m•\x1b[0m boltz
+  \x1b[2m•\x1b[0m borzoi
+\x1b[2mSkipping deletion in non-interactive mode.\x1b[0m
+"""
+    parsed = parse_deleted_upstream_skills(raw_output)
+    assert parsed == ["alphafold2", "boltz", "borzoi"]
+
+
+def test_update_prune_deletes_local_skills_and_updates_lock(env, monkeypatch):
+    from skill_ctl import skills as skills_mod
+
+    preset_dir = env["presets"] / "mypreset"
+    # Create the skill files
+    (preset_dir / ".agents" / "skills" / "alphafold2").mkdir(parents=True)
+    (preset_dir / ".agents" / "skills" / "alphafold2" / "SKILL.md").write_text("# af2")
+    # And lockfile
+    (preset_dir / "skills-lock.json").write_text(
+        json.dumps(
+            {"version": 1, "skills": {"alphafold2": {"source": "feynman"}, "other": {"source": "feynman"}}}
+        )
+    )
+
+    fake_output = (
+        "Warning: The following skills from feynman appear to have been deleted upstream:\n"
+        "  • alphafold2\n"
+        "Skipping deletion in non-interactive mode.\n"
+    )
+    monkeypatch.setattr(skills_mod, "PRESETS_DIR", env["presets"])
+    from skill_ctl import presets as presets_mod
+
+    monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
+    monkeypatch.setattr(skills_mod, "run_npx_skills", lambda args, cwd, **kw: (0, fake_output))
+
+    skills_mod.update(preset="mypreset", prune=True, yes=True)
+
+    # Local skill folder should be pruned
+    assert not (preset_dir / ".agents" / "skills" / "alphafold2").exists()
+    # And lockfile should have entry removed while keeping other
+    lock_data = json.loads((preset_dir / "skills-lock.json").read_text())
+    assert "alphafold2" not in lock_data.get("skills", {})
+    assert "other" in lock_data.get("skills", {})
+
+
+def test_update_keep_deleted_preserves_files_and_decouples_from_lock(env, monkeypatch):
+    from skill_ctl import skills as skills_mod
+
+    preset_dir = env["presets"] / "mypreset"
+    # Create the skill files
+    (preset_dir / ".agents" / "skills" / "alphafold2").mkdir(parents=True)
+    (preset_dir / ".agents" / "skills" / "alphafold2" / "SKILL.md").write_text("# af2")
+    # And lockfile
+    (preset_dir / "skills-lock.json").write_text(
+        json.dumps(
+            {"version": 1, "skills": {"alphafold2": {"source": "feynman"}, "other": {"source": "feynman"}}}
+        )
+    )
+
+    fake_output = (
+        "Warning: The following skills from feynman appear to have been deleted upstream:\n"
+        "  • alphafold2\n"
+        "Skipping deletion in non-interactive mode.\n"
+    )
+    monkeypatch.setattr(skills_mod, "PRESETS_DIR", env["presets"])
+    from skill_ctl import presets as presets_mod
+
+    monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
+    monkeypatch.setattr(skills_mod, "run_npx_skills", lambda args, cwd, **kw: (0, fake_output))
+
+    skills_mod.update(preset="mypreset", keep_deleted=True, yes=True)
+
+    # Local skill folder MUST be kept intact!
+    assert (preset_dir / ".agents" / "skills" / "alphafold2").is_dir()
+    # But decoupled from lockfile while keeping other
+    lock_data = json.loads((preset_dir / "skills-lock.json").read_text())
+    assert "alphafold2" not in lock_data.get("skills", {})
+    assert "other" in lock_data.get("skills", {})
+
+
+def test_update_prune_and_keep_deleted_mutually_exclusive():
+    from skill_ctl import skills as skills_mod
+
+    with pytest.raises(SystemExit):
+        skills_mod.update(prune=True, keep_deleted=True)
+
+
 def test_add_installed_to_global(env, monkeypatch):
     from skill_ctl import presets as presets_mod
 
