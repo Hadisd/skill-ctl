@@ -30,7 +30,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-__version__ = "0.1.19"
+__version__ = "0.2.0"
 
 _MODULE_MAP = {
     # commands
