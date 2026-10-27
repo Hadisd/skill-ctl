@@ -302,3 +302,47 @@ def test_sync_is_in_completion_scripts(tmp_path, shell):
         assert "-l dry-run" in output and "-l message" in output
     else:
         assert "--dry-run" in output and "--message" in output
+
+
+def global_skill(env, name="caveman", content="# caveman\n"):
+    path = Path(env["HOME"]) / ".agents" / "skills" / name / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_sync_global_skills_two_way_add_merge_and_delete(tmp_path, remote):
+    first, second = pair(tmp_path, remote)
+    global_skill(first, "caveman", "# caveman\n")
+    global_skill(second, "humanizer", "# humanizer\n")
+
+    # Device 1 and Device 2 independently sync with -g
+    run(first, "sync", "-g")
+    run(second, "sync", "--global")
+    run(first, "sync", "-g")
+
+    for env in (first, second):
+        home = Path(env["HOME"])
+        assert (home / ".agents/skills/caveman/SKILL.md").read_text(encoding="utf-8") == "# caveman\n"
+        assert (home / ".agents/skills/humanizer/SKILL.md").read_text(encoding="utf-8") == "# humanizer\n"
+
+    # Deleting a global skill on Device 2 and syncing removes it on Device 1 too
+    import shutil
+
+    shutil.rmtree(Path(second["HOME"]) / ".agents" / "skills" / "caveman")
+    run(second, "sync", "-g")
+    run(first, "sync", "-g")
+    assert not (Path(first["HOME"]) / ".agents" / "skills" / "caveman").exists()
+    assert (Path(first["HOME"]) / ".agents" / "skills" / "humanizer" / "SKILL.md").is_file()
+
+
+def test_sync_global_dry_run_and_status_do_not_modify_disk(tmp_path, remote):
+    first, _ = pair(tmp_path, remote)
+    global_skill(first, "pending-global", "# pending\n")
+    head = git(first, "rev-parse", "HEAD")
+
+    for args in (("sync", "--dry-run", "-g"), ("sync", "status", "-g")):
+        output = run(first, *args)
+        assert "global/.agents/skills/pending-global" in output
+        assert not (base(first) / "global").exists()
+        assert git(first, "rev-parse", "HEAD") == head

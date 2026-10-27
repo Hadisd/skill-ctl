@@ -523,6 +523,7 @@ Use an existing repository URL, or pass a bare name and let the `gh` CLI create 
 
 ```bash
 skctl backup
+skctl backup -g            # also include global skills (~/.agents/skills)
 skctl backup -m "add latex preset"
 skctl backup status
 ```
@@ -531,6 +532,7 @@ Restore on another machine:
 
 ```bash
 skctl restore --repo <owner/name>
+skctl restore -g           # also restore global skills into ~/.agents/skills
 ```
 
 The backup contains skill files, not only lock files. Anyone with access to the repository can read those skills. Keep the repository private if the skills are private.
@@ -592,6 +594,7 @@ Connect each device to the same backup repository, then sync:
 ```bash
 skctl backup init --repo owner/skill-ctl-presets
 skctl sync
+skctl sync -g              # also sync global skills (~/.agents/skills)
 skctl sync --dry-run       # fetch and preview incoming and outgoing changes
 skctl sync status          # fetch and report current sync state
 skctl sync -m "add testing skills"

@@ -280,3 +280,91 @@ def test_backup_excludes_and_untracks_cache(tmp_path, remote):
         check=True,
     ).stdout.strip()
     assert tracked_cache == ""
+
+
+def test_backup_push_and_pull_global_skills(tmp_path, remote):
+    first = make_home(tmp_path, "home1")
+    home1 = Path(first["HOME"])
+    global_skill = home1 / ".agents" / "skills" / "caveman"
+    global_skill.mkdir(parents=True)
+    (global_skill / "SKILL.md").write_text("# caveman\n", encoding="utf-8")
+    lock_file = home1 / ".agents" / ".skill-lock.json"
+    lock_file.write_text(
+        '{"version": 1, "skills": {"caveman": {"source": "owner/caveman"}}}\n',
+        encoding="utf-8",
+    )
+    # Symlink into presets should NOT be duplicated as a standalone global skill
+    preset_link = home1 / ".agents" / "skills" / "tdd"
+    preset_link.symlink_to(home1 / ".skill-ctl" / "presets" / "demo" / ".agents" / "skills" / "tdd")
+
+    res = skctl(first, "backup", "push", "--repo", remote, "-g")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert (home1 / ".skill-ctl" / "global" / ".agents" / "skills" / "caveman" / "SKILL.md").is_file()
+    assert not (home1 / ".skill-ctl" / "global" / ".agents" / "skills" / "tdd").exists()
+
+    # Restore on a second machine with -g
+    second = make_home(tmp_path, "home2", with_preset=False)
+    home2 = Path(second["HOME"])
+    res = skctl(second, "backup", "pull", "--repo", remote, "-y", "--global")
+    assert res.returncode == 0, res.stdout + res.stderr
+    restored_global = home2 / ".agents" / "skills" / "caveman" / "SKILL.md"
+    assert restored_global.is_file()
+    assert restored_global.read_text(encoding="utf-8") == "# caveman\n"
+    restored_lock = home2 / ".agents" / ".skill-lock.json"
+    assert restored_lock.is_file()
+    assert "owner/caveman" in restored_lock.read_text(encoding="utf-8")
+
+
+def test_backup_status_reports_uncommitted_global_skills(tmp_path, remote):
+    first = make_home(tmp_path, "home1")
+    home1 = Path(first["HOME"])
+    assert skctl(first, "backup", "push", "--repo", remote, "-g").returncode == 0
+
+    new_global = home1 / ".agents" / "skills" / "firecrawl"
+    new_global.mkdir(parents=True)
+    (new_global / "SKILL.md").write_text("# firecrawl\n", encoding="utf-8")
+
+    # Without -g, status only checks ~/.skill-ctl
+    res_plain = skctl(first, "backup", "status")
+    assert res_plain.returncode == 0
+    assert "Backup is current" in res_plain.stdout
+
+    # With -g, status detects the new global skill without writing to ~/.skill-ctl
+    res_global = skctl(first, "backup", "status", "-g")
+    assert res_global.returncode == 0
+    assert "uncommitted change" in res_global.stdout
+    assert "global/.agents/skills/firecrawl" in res_global.stdout
+    assert not (home1 / ".skill-ctl" / "global").exists()
+
+
+def test_backup_global_preserves_all_agent_directories(tmp_path, remote):
+    first = make_home(tmp_path, "home1")
+    home1 = Path(first["HOME"])
+
+    agents_skill = home1 / ".agents" / "skills" / "caveman"
+    agents_skill.mkdir(parents=True)
+    (agents_skill / "SKILL.md").write_text("# caveman\n", encoding="utf-8")
+
+    cursor_dir = home1 / ".cursor" / "skills"
+    cursor_dir.mkdir(parents=True)
+    (cursor_dir / "caveman").symlink_to("../../.agents/skills/caveman", target_is_directory=True)
+
+    hermes_skill = home1 / ".hermes" / "skills" / "hermes-only"
+    hermes_skill.mkdir(parents=True)
+    (hermes_skill / "SKILL.md").write_text("# hermes-only\n", encoding="utf-8")
+
+    res = skctl(first, "backup", "push", "--repo", remote, "-g")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert (home1 / ".skill-ctl/global/.agents/skills/caveman/SKILL.md").is_file()
+    assert (home1 / ".skill-ctl/global/.cursor/skills/caveman/SKILL.md").is_file()
+    assert (home1 / ".skill-ctl/global/.hermes/skills/hermes-only/SKILL.md").is_file()
+
+    second = make_home(tmp_path, "home2", with_preset=False)
+    home2 = Path(second["HOME"])
+    res = skctl(second, "backup", "pull", "--repo", remote, "-y", "-g")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert (home2 / ".agents/skills/caveman/SKILL.md").read_text(encoding="utf-8") == "# caveman\n"
+    assert (home2 / ".cursor/skills/caveman/SKILL.md").read_text(encoding="utf-8") == "# caveman\n"
+    assert (home2 / ".hermes/skills/hermes-only/SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "# hermes-only\n"

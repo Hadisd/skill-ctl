@@ -57,7 +57,9 @@ complete -c skctl -n '__skctl_using apply unapply' -a '(__skctl_presets)'
 complete -c skctl -s P -l preset -x -a '(__skctl_presets)' -d Preset
 complete -c skctl -n '__skctl_using presets' -a 'list applied create edit clone combine history rename delete export import' -d Action
 complete -c skctl -n '__skctl_using backup' -a 'push pull init status' -d Action
+complete -c skctl -n '__skctl_using backup' -s g -l global -d 'Include global skills'
 complete -c skctl -n '__skctl_using sync' -a status -d 'Fetch and report sync state'
+complete -c skctl -n '__skctl_using sync' -s g -l global -d 'Also sync global skills'
 complete -c skctl -n '__skctl_using sync' -l dry-run -d 'Preview incoming and outgoing changes'
 complete -c skctl -n '__skctl_using sync' -s m -l message -r -d 'Commit message for local changes'
 complete -c skctl -n '__skctl_using config' -a 'show path edit reset' -d Action
@@ -120,8 +122,8 @@ _skctl() {{
         unapply) COMPREPLY=( $(compgen -W "$presets --global --force --yes" -- "$cur") ) ;;
         search) COMPREPLY=( $(compgen -W "--preset --global --local --remote --owner --applied --json --npx skills.sh skillsmp all" -- "$cur") ) ;;
         presets|preset) COMPREPLY=( $(compgen -W "list applied create edit clone combine history rename delete export import" -- "$cur") ) ;;
-        backup) COMPREPLY=( $(compgen -W "push pull init status --dry-run" -- "$cur") ) ;;
-        sync) COMPREPLY=( $(compgen -W "status --dry-run --message --help" -- "$cur") ) ;;
+        backup) COMPREPLY=( $(compgen -W "push pull init status --global --dry-run" -- "$cur") ) ;;
+        sync) COMPREPLY=( $(compgen -W "status --global --dry-run --message --help" -- "$cur") ) ;;
         config) COMPREPLY=( $(compgen -W "show path edit reset" -- "$cur") ) ;;
         theme) COMPREPLY=( $(compgen -W "list default dark light mono catppuccin catppuccin-mocha catppuccin-macchiato catppuccin-frappe catppuccin-latte tokyo-night gruvbox" -- "$cur") ) ;;
         completion) COMPREPLY=( $(compgen -W "fish bash zsh powershell" -- "$cur") ) ;;
@@ -163,8 +165,8 @@ _skctl() {{
         unapply) _arguments '--global[Remove preset skills globally]' '--force[Delete real directories]' '--yes[Skip confirmation]' '*:preset:_skctl_presets' ;;
         search) _values 'option' --preset --global --local --remote --owner --applied --json --npx ;;
         presets|preset) _values 'action' list applied create edit clone combine history rename delete export import ;;
-        backup) _values 'action' push pull init status --dry-run ;;
-        sync) _arguments '--dry-run[Preview incoming and outgoing changes]' '--message[Commit message for local changes]:message:' '1:action:(status)' ;;
+        backup) _values 'action' push pull init status --global --dry-run ;;
+        sync) _arguments '--global[Also sync global skills]' '--dry-run[Preview incoming and outgoing changes]' '--message[Commit message for local changes]:message:' '1:action:(status)' ;;
         config) _values 'action' show path edit reset ;;
         theme) _values 'action' list default dark light mono catppuccin catppuccin-mocha catppuccin-macchiato catppuccin-frappe catppuccin-latte tokyo-night gruvbox ;;
         completion) _values 'shell' fish bash zsh powershell ;;
@@ -187,7 +189,7 @@ Register-ArgumentCompleter -Native -CommandName skctl, skill-ctl -ScriptBlock {{
     if ($words.Count -gt 1 -and $words[1] -eq 'completion') {{
         $candidates = @('fish', 'bash', 'zsh', 'powershell')
     }} elseif ($words.Count -gt 2 -and $words[1] -eq 'sync') {{
-        $candidates = @('status', '--dry-run', '--message', '--help')
+        $candidates = @('status', '--global', '-g', '--dry-run', '--message', '--help')
     }} elseif ($words.Count -gt 1 -and ($words[1] -in 'apply', 'unapply' -or '-P' -in $words -or '--preset' -in $words)) {{
         $presetDir = Join-Path $HOME '.skill-ctl/presets'
         if (Test-Path $presetDir) {{

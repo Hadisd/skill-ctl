@@ -214,6 +214,7 @@ def load_config() -> dict:
             "~/.codex/skills",
             "~/.cursor/skills",
             "~/.codeium/windsurf/skills",
+            "~/.hermes/skills",
         ],
         "search_remotes": [
             {"name": "skills.sh", "url": "https://skills.sh", "enabled": True},

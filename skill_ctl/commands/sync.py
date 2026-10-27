@@ -7,13 +7,17 @@ import typer
 
 from skill_ctl.backup import (
     BRANCH,
+    backed_up_global_entries,
     backup_lock,
     commit_presets,
     ensure_local_repo,
     git,
     has_repo,
     remote_url,
+    restore_global_skills,
     sanitize_url,
+    stage_global_skills,
+    uncommitted_global_changes,
 )
 from skill_ctl.constants import BASE_DIR
 from skill_ctl.ui import console, print_error, print_header, print_success, print_warn
@@ -61,7 +65,12 @@ def check_remote_files() -> None:
     """Never bring a legacy backup's machine-specific files onto this device."""
     paths = checked_git(["ls-tree", "-rz", "--name-only", REMOTE_BRANCH]).stdout.split("\0")
     excluded = [
-        path for path in paths if path and path != ".gitignore" and not path.startswith("presets/")
+        path
+        for path in paths
+        if path
+        and path != ".gitignore"
+        and not path.startswith("presets/")
+        and not path.startswith("global/")
     ]
     if excluded:
         print_error(
@@ -75,12 +84,20 @@ def check_remote_files() -> None:
         raise SystemExit(1)
 
 
-def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
+def show_sync_status(
+    remote_exists: bool, preview: bool = False, include_global: bool = False
+) -> None:
     print_header("Sync preview" if preview else "Sync status")
-    dirty = checked_git(["status", "--short", "--", "presets", ".gitignore"]).stdout.strip()
-    if dirty:
+    tracked_dirs = ["presets", "global", ".gitignore"] if include_global else ["presets", ".gitignore"]
+    diff_dirs = ["presets", "global"] if include_global else ["presets"]
+    dirty = checked_git(["status", "--short", "--", *tracked_dirs]).stdout.strip()
+    global_dirty = uncommitted_global_changes() if include_global else []
+    if dirty or global_dirty:
         console.print("Local changes to commit:")
-        console.print(dirty, markup=False)
+        if dirty:
+            console.print(dirty, markup=False)
+        for line in global_dirty:
+            console.print(f" {line}", markup=False)
 
     local_exists = has_commit("HEAD")
     if not remote_exists:
@@ -99,7 +116,7 @@ def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
             ]
         ).stdout.split()
         console.print(f"{behind} incoming commit(s), {ahead} outgoing commit(s).")
-        if behind == ahead == "0" and not dirty:
+        if behind == ahead == "0" and not dirty and not global_dirty:
             print_success("Presets are in sync.")
             return
         base = git(["merge-base", "HEAD", REMOTE_BRANCH], capture=True)
@@ -114,7 +131,7 @@ def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
                     base.stdout.strip() or "HEAD",
                     REMOTE_BRANCH,
                     "--",
-                    "presets",
+                    *diff_dirs,
                 ]
             ).stdout
             if behind != "0"
@@ -128,7 +145,7 @@ def show_sync_status(remote_exists: bool, preview: bool = False) -> None:
                     base.stdout.strip() or REMOTE_BRANCH,
                     "HEAD",
                     "--",
-                    "presets",
+                    *diff_dirs,
                 ]
             ).stdout
             if ahead != "0"
@@ -193,11 +210,20 @@ def sync(
             "--message", "-m", help="Commit message for local changes (default: sync presets)."
         ),
     ] = None,
+    include_global: Annotated[
+        bool,
+        typer.Option(
+            "--global",
+            "-g",
+            help="Also sync global skills (~/.agents/skills, ~/.claude/skills, ...) between devices.",
+        ),
+    ] = False,
 ) -> None:
     """Sync presets between devices using the configured Git backup.
 
     Run backup init --repo owner/name on each device first. Changes that do not
     conflict are merged and pushed; conflicts preserve both versions in Git.
+    Pass --global / -g to also sync global skills (~/.agents/skills).
     Configuration, caches, and this device's project paths stay local.
     """
     if not has_repo() or not remote_url():
@@ -211,13 +237,20 @@ def sync(
         if remote_exists:
             check_remote_files()
         if dry_run or action == "status":
-            show_sync_status(remote_exists, preview=dry_run)
+            show_sync_status(remote_exists, preview=dry_run, include_global=include_global)
             return
 
         ensure_local_repo()
-        commit_presets(message or "sync presets", presets_only=True)
+        if include_global:
+            stage_global_skills()
+        default_msg = "sync presets and global skills" if include_global else "sync presets"
+        commit_presets(message or default_msg, presets_only=True)
+        before_merge_entries = backed_up_global_entries() if include_global else set()
         if remote_exists:
             merge_remote()
+        if include_global:
+            after_merge_entries = backed_up_global_entries()
+            restore_global_skills(removed_entries=before_merge_entries - after_merge_entries)
         result = git(["push", "-u", "origin", BRANCH], capture=True)
         if result.returncode != 0:
             console.print((result.stderr or result.stdout).rstrip(), markup=False)
@@ -225,4 +258,6 @@ def sync(
                 "Push failed. Local commits are saved; run skctl sync again to fetch and retry."
             )
             raise SystemExit(1)
-        print_success("Presets synced.")
+        print_success(
+            "Presets synced (including global skills)." if include_global else "Presets synced."
+        )

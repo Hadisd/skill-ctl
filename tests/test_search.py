@@ -20,7 +20,7 @@ SKILLS = {
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
     home = tmp_path / "home"
     proj = tmp_path / "proj"
     proj.mkdir(parents=True)
@@ -32,6 +32,9 @@ def env(tmp_path):
         if description:
             body = f"---\nname: {name}\ndescription: {description}\n---\n\n" + body
         (d / "SKILL.md").write_text(body, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr("skill_ctl.core.registry.APPLIED_FILE", home / ".skill-ctl" / "applied.json")
     return {
         "home": home,
         "proj": proj,
