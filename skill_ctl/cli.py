@@ -379,7 +379,9 @@ def main() -> None:
         print(f"skctl {__version__}")
         return
     dry_run = cleaned_args[:1] in (["apply"], ["sync"]) and "--dry-run" in cleaned_args
-    dry_run = dry_run or (cleaned_args[:1] == ["backup"] and "pull" in cleaned_args and "--dry-run" in cleaned_args)
+    dry_run = dry_run or (
+        cleaned_args[:1] == ["backup"] and "pull" in cleaned_args and "--dry-run" in cleaned_args
+    )
     sync_status = cleaned_args[:1] == ["sync"] and "status" in cleaned_args
     update_check = cleaned_args[:1] == ["self-update"] and "--check" in cleaned_args
     # Dry runs and update checks must not create or migrate config.yaml.

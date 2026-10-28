@@ -185,6 +185,38 @@ def test_export_and_import_preset_with_preview_and_rename(tmp_path):
     assert skill.read_text(encoding="utf-8") == "# tdd\n"
 
 
+@pytest.mark.parametrize("replace", [False, True])
+@pytest.mark.parametrize("empty_subdirectory", [False, True])
+def test_empty_preset_archive_round_trips(tmp_path, replace, empty_subdirectory):
+    env = make_home(tmp_path, "home")
+    presets = Path(env["HOME"]) / ".skill-ctl/presets"
+    source = presets / "empty"
+    source.mkdir()
+    if empty_subdirectory:
+        (source / "references").mkdir()
+    archive = tmp_path / "empty.zip"
+    result = skctl(env, "presets", "export", "empty", "-o", str(archive))
+    assert result.returncode == 0, result.stdout + result.stderr
+    target = presets / "imported"
+    if replace:
+        target.mkdir()
+        (target / "old.txt").write_text("Old preset\n", encoding="utf-8")
+    result = skctl(
+        env,
+        "presets",
+        "import",
+        str(archive),
+        "--rename",
+        "imported",
+        *(["--replace"] if replace else []),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert target.is_dir()
+    assert not (target / "old.txt").exists()
+    if empty_subdirectory:
+        assert (target / "references").is_dir()
+
+
 def test_import_preset_from_a_repository(tmp_path, remote):
     first = make_home(tmp_path, "home1")
     research = (
@@ -299,7 +331,9 @@ def test_backup_push_and_pull_global_skills(tmp_path, remote):
 
     res = skctl(first, "backup", "push", "--repo", remote, "-g")
     assert res.returncode == 0, res.stdout + res.stderr
-    assert (home1 / ".skill-ctl" / "global" / ".agents" / "skills" / "caveman" / "SKILL.md").is_file()
+    assert (
+        home1 / ".skill-ctl" / "global" / ".agents" / "skills" / "caveman" / "SKILL.md"
+    ).is_file()
     assert not (home1 / ".skill-ctl" / "global" / ".agents" / "skills" / "tdd").exists()
 
     # Restore on a second machine with -g

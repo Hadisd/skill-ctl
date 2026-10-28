@@ -168,10 +168,11 @@ def get_json(url: str, timeout: float = 10) -> dict:
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
     headers = {"Accept": "application/json", "User-Agent": "skill-ctl"}
-    token = get_github_token()
-    if token and "api.github.com" in url:
-        headers["Authorization"] = f"Bearer {token}"
     request = Request(url, headers=headers)
+    if parsed.scheme == "https" and parsed.hostname == "api.github.com":
+        token = get_github_token()
+        if token:
+            request.add_unredirected_header("Authorization", f"Bearer {token}")
     with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read())
 
@@ -1117,6 +1118,8 @@ def frontmatter(source: str, skill_name: str, branch: str = "main", timeout: flo
         parsed = yaml.safe_load(block)
     except yaml.YAMLError:
         parsed = {}
+    # YAML dates, including nested metadata, must survive JSON caches.
+    parsed = json.loads(json.dumps(parsed, default=str))
     res = {"path": path, "content": text, **(parsed if isinstance(parsed, dict) else {})}
     _write_disk_cache(skill_cache_file, res)
     return res

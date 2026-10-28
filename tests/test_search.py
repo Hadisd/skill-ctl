@@ -34,7 +34,9 @@ def env(tmp_path, monkeypatch):
         (d / "SKILL.md").write_text(body, encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setattr("skill_ctl.core.registry.APPLIED_FILE", home / ".skill-ctl" / "applied.json")
+    monkeypatch.setattr(
+        "skill_ctl.core.registry.APPLIED_FILE", home / ".skill-ctl" / "applied.json"
+    )
     return {
         "home": home,
         "proj": proj,
@@ -735,6 +737,19 @@ def test_search_json_output_includes_updated_at(env):
     assert found[0]["updated_at"] is not None
 
 
+@pytest.mark.parametrize("date_field", ["updated", "updated_at", "date"])
+def test_search_accepts_yaml_dates_with_quoted_descriptions(env, date_field):
+    skill = env["presets"] / "frontend/.agents/skills/latex-paper/SKILL.md"
+    skill.write_text(
+        '---\nname: latex-paper\ndescription: "Quoted description"\n'
+        f"{date_field}: 2026-10-01\n---\n# Content\n",
+        encoding="utf-8",
+    )
+    for _ in range(2):
+        found = rows(env, "latex")
+        assert found[0]["updated_at"] == "2026-10-01"
+
+
 def test_search_remote_install_triggers_maybe_auto_push(monkeypatch, tmp_path):
     import sys
 
@@ -1406,4 +1421,3 @@ def test_catalog_module_invocations(tmp_path):
             text=True,
         )
         assert res.returncode == 0, f"{mod} failed with: {res.stderr}"
-

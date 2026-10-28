@@ -612,6 +612,11 @@ the remote stays unchanged. Sync prints the conflicting paths and the Git
 commands needed to resolve them. After resolving and committing the merge,
 run `skctl sync` again. Sync never force-pushes.
 
+Global sync remembers what this device last backed up or restored. Switching
+from `sync` to `sync -g` preserves downloaded skills that have not been installed
+yet. If local skills and an already downloaded backup both changed, sync stops
+and lists the copies to reconcile before retrying.
+
 Dry runs and status fetch Git metadata without changing presets, making
 commits, or pushing. A preview lists pending local changes and incoming and
 outgoing committed changes; it does not guarantee that a merge will be conflict-free.

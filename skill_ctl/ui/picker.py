@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -162,6 +163,8 @@ def parse_skill_meta(skill_dir: Path) -> tuple[str, str, Optional[float | str]]:
     name = values.get("name") or name
     description = " ".join(str(values.get("description", "")).split())
     updated_at = values.get("updated") or values.get("updated_at") or values.get("date")
+    if isinstance(updated_at, date):
+        updated_at = updated_at.isoformat()
     return name, description, updated_at
 
 

@@ -1,5 +1,6 @@
 """Exercise two-device sync using real Git repositories and isolated homes."""
 
+import json
 import os
 import subprocess
 import sys
@@ -323,8 +324,12 @@ def test_sync_global_skills_two_way_add_merge_and_delete(tmp_path, remote):
 
     for env in (first, second):
         home = Path(env["HOME"])
-        assert (home / ".agents/skills/caveman/SKILL.md").read_text(encoding="utf-8") == "# caveman\n"
-        assert (home / ".agents/skills/humanizer/SKILL.md").read_text(encoding="utf-8") == "# humanizer\n"
+        assert (home / ".agents/skills/caveman/SKILL.md").read_text(
+            encoding="utf-8"
+        ) == "# caveman\n"
+        assert (home / ".agents/skills/humanizer/SKILL.md").read_text(
+            encoding="utf-8"
+        ) == "# humanizer\n"
 
     # Deleting a global skill on Device 2 and syncing removes it on Device 1 too
     import shutil
@@ -345,4 +350,127 @@ def test_sync_global_dry_run_and_status_do_not_modify_disk(tmp_path, remote):
         output = run(first, *args)
         assert "global/.agents/skills/pending-global" in output
         assert not (base(first) / "global").exists()
+        assert not (base(first) / "global-sync.json").exists()
         assert git(first, "rev-parse", "HEAD") == head
+
+
+def put_global(env, rel_dir, name):
+    path = Path(env["HOME"]) / rel_dir / name / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {name}\n", encoding="utf-8")
+
+
+def test_sync_global_restores_agent_folder_missing_on_other_device(tmp_path, remote):
+    first, second = pair(tmp_path, remote)
+    put_global(first, ".cursor/skills", "cur")
+    run(first, "sync", "-g")
+    run(second, "sync", "-g")
+    run(second, "sync", "-g")
+    run(first, "sync", "-g")
+    assert (Path(first["HOME"]) / ".cursor/skills/cur/SKILL.md").is_file()
+    assert (Path(second["HOME"]) / ".cursor/skills/cur/SKILL.md").is_file()
+
+
+def test_sync_global_narrower_config_does_not_delete_other_device_skills(tmp_path, remote):
+    first, second = pair(tmp_path, remote)
+    put_global(first, ".cursor/skills", "cur")
+    run(first, "sync", "-g")
+    cfg = base(second) / "config.yaml"
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8") + '\nglobal_skill_dirs:\n  - "~/.agents/skills"\n',
+        encoding="utf-8",
+    )
+    run(second, "sync", "-g")
+    run(second, "sync", "-g")
+    run(first, "sync", "-g")
+    assert (Path(first["HOME"]) / ".cursor/skills/cur/SKILL.md").is_file()
+    assert not (Path(second["HOME"]) / ".cursor").exists()
+    assert "global/.cursor" not in run(second, "sync", "status", "-g")
+
+    cfg.write_text(cfg.read_text(encoding="utf-8") + '  - "~/.cursor/skills"\n', encoding="utf-8")
+    run(second, "sync", "-g")
+    assert (Path(second["HOME"]) / ".cursor/skills/cur/SKILL.md").is_file()
+
+
+@pytest.mark.parametrize("download", [("sync",), ("backup", "pull", "-y")])
+def test_enabling_global_sync_preserves_skills_downloaded_without_restoring(
+    tmp_path, remote, download
+):
+    first, second = pair(tmp_path, remote)
+    global_skill(first, "remote-only", "# Remote\n")
+    run(first, "sync", "-g")
+    run(second, *download)
+    global_skill(second, "local-only", "# Local\n")
+    assert "D\tglobal/.agents/skills/remote-only" not in run(second, "sync", "status", "-g")
+
+    run(second, "sync", "-g")
+    run(first, "sync", "-g")
+    for env in (first, second):
+        assert (
+            Path(env["HOME"]) / ".agents/skills/remote-only/SKILL.md"
+        ).read_text() == "# Remote\n"
+        assert (Path(env["HOME"]) / ".agents/skills/local-only/SKILL.md").read_text() == "# Local\n"
+        assert (base(env) / "global-sync.json").is_file()
+        assert git(env, "ls-files", "global-sync.json") == ""
+
+
+def test_global_sync_after_plain_sync_restores_remote_edits_and_deletions(tmp_path, remote):
+    import shutil
+
+    first, second = pair(tmp_path, remote)
+    global_skill(first, "shared", "# Original\n")
+    global_skill(first, "deleted", "# Delete me\n")
+    lock = Path(first["HOME"]) / ".agents/.skill-lock.json"
+    lock.write_text(json.dumps({"version": 1, "skills": {"shared": {"source": "old/repo"}}}))
+    run(first, "sync", "-g")
+    run(second, "sync", "-g")
+    global_skill(first, "shared", "# Updated remotely\n")
+    lock.write_text(json.dumps({"version": 1, "skills": {"shared": {"source": "new/repo"}}}))
+    shutil.rmtree(Path(first["HOME"]) / ".agents/skills/deleted")
+    run(first, "sync", "-g")
+    run(second, "sync")
+    run(second, "sync", "-g")
+    run(first, "sync", "-g")
+    for env in (first, second):
+        assert (
+            Path(env["HOME"]) / ".agents/skills/shared/SKILL.md"
+        ).read_text() == "# Updated remotely\n"
+        assert not (Path(env["HOME"]) / ".agents/skills/deleted").exists()
+        metadata = json.loads((Path(env["HOME"]) / ".agents/.skill-lock.json").read_text())
+        assert metadata["skills"]["shared"]["source"] == "new/repo"
+
+
+def test_global_sync_preserves_both_versions_when_plain_sync_downloaded_conflicting_edits(
+    tmp_path, remote
+):
+    first, second = pair(tmp_path, remote)
+    global_skill(first, "shared", "# Original\n")
+    run(first, "sync", "-g")
+    run(second, "sync", "-g")
+    global_skill(first, "shared", "# Remote edit\n")
+    run(first, "sync", "-g")
+    global_skill(second, "shared", "# Local edit\n")
+    global_skill(second, "aaa-local", "# Pending local skill\n")
+    run(second, "sync")
+    head = git(second, "rev-parse", "HEAD")
+
+    output = run(second, "sync", "-g", ok=False)
+    assert "changed both locally and in the backup" in output
+    assert git(second, "rev-parse", "HEAD") == head
+    assert (Path(second["HOME"]) / ".agents/skills/shared/SKILL.md").read_text() == "# Local edit\n"
+    assert (base(second) / "global/.agents/skills/shared/SKILL.md").read_text() == "# Remote edit\n"
+    assert not (base(second) / "global/.agents/skills/aaa-local").exists()
+
+
+def test_global_sync_state_cannot_delete_parent_paths(tmp_path, remote):
+    first, _ = pair(tmp_path, remote)
+    home = Path(first["HOME"])
+    (home / ".agents/skills").mkdir(parents=True)
+    private = home / ".agents/private/keep.txt"
+    private.parent.mkdir()
+    private.write_text("Keep this file\n", encoding="utf-8")
+    (base(first) / "global-sync.json").write_text(
+        json.dumps({".agents/skills": {"../private": "invalid"}}), encoding="utf-8"
+    )
+    run(first, "sync", "-g")
+    assert private.read_text() == "Keep this file\n"

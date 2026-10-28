@@ -34,6 +34,63 @@ def test_disk_cache_read_write(tmp_path):
     assert _read_disk_cache(target, ttl=0.01) is None
 
 
+@pytest.mark.parametrize(
+    "url, authenticated",
+    [
+        ("https://api.github.com/repos/owner/repo", True),
+        ("https://skills.sh/api/search?q=api.github.com", False),
+        ("https://api.github.com.example.test/search", False),
+        ("https://api.github.com@registry.example/search", False),
+        ("http://api.github.com/repos/owner/repo", False),
+    ],
+)
+def test_github_credentials_only_go_to_https_api_host(monkeypatch, url, authenticated):
+    from urllib.request import HTTPRedirectHandler
+
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return b"{}"
+
+    def open_request(request, **kwargs):
+        requests.append(request)
+        return Response()
+
+    monkeypatch.setattr(catalog, "get_github_token", lambda: "test-token")
+    monkeypatch.setattr(catalog, "urlopen", open_request)
+    catalog.get_json(url)
+    request = requests[0]
+    expected = "Bearer test-token" if authenticated else None
+    assert request.get_header("Authorization") == expected
+    redirected = HTTPRedirectHandler().redirect_request(
+        request, None, 302, "Found", {}, "https://registry.example/redirect"
+    )
+    assert redirected.get_header("Authorization") is None
+
+
+def test_frontmatter_dates_are_json_serializable(monkeypatch):
+    monkeypatch.setattr(
+        catalog,
+        "_fetch_candidates_parallel",
+        lambda *args: (
+            "dated/SKILL.md",
+            '---\nname: dated\ndescription: "Dated skill"\nupdated: 2026-10-01\n'
+            "metadata:\n  created: 2026-09-01\n---\n# Content\n",
+        ),
+    )
+    meta = frontmatter("owner/repo", "dated")
+    assert meta["updated"] == "2026-10-01"
+    assert meta["metadata"]["created"] == "2026-09-01"
+    assert frontmatter("owner/repo", "dated") == meta
+
+
 def test_search_persists_to_disk_and_hits_cache(monkeypatch):
     calls = []
 

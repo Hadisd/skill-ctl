@@ -12,6 +12,7 @@ from skill_ctl.backup import (
     commit_presets,
     ensure_local_repo,
     git,
+    global_sync_entries,
     has_repo,
     remote_url,
     restore_global_skills,
@@ -88,10 +89,12 @@ def show_sync_status(
     remote_exists: bool, preview: bool = False, include_global: bool = False
 ) -> None:
     print_header("Sync preview" if preview else "Sync status")
-    tracked_dirs = ["presets", "global", ".gitignore"] if include_global else ["presets", ".gitignore"]
+    tracked_dirs = (
+        ["presets", "global", ".gitignore"] if include_global else ["presets", ".gitignore"]
+    )
     diff_dirs = ["presets", "global"] if include_global else ["presets"]
     dirty = checked_git(["status", "--short", "--", *tracked_dirs]).stdout.strip()
-    global_dirty = uncommitted_global_changes() if include_global else []
+    global_dirty = uncommitted_global_changes(sync=True) if include_global else []
     if dirty or global_dirty:
         console.print("Local changes to commit:")
         if dirty:
@@ -242,10 +245,12 @@ def sync(
 
         ensure_local_repo()
         if include_global:
-            stage_global_skills()
+            stage_global_skills(sync=True)
         default_msg = "sync presets and global skills" if include_global else "sync presets"
         commit_presets(message or default_msg, presets_only=True)
-        before_merge_entries = backed_up_global_entries() if include_global else set()
+        before_merge_entries = (
+            backed_up_global_entries() | global_sync_entries() if include_global else set()
+        )
         if remote_exists:
             merge_remote()
         if include_global:

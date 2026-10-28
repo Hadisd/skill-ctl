@@ -61,6 +61,45 @@ def test_apply_links_skills_into_default_targets(env):
             assert (link / "SKILL.md").exists()
 
 
+@pytest.mark.parametrize("legacy_overlap", [False, True])
+def test_resync_preserves_the_latest_preset_for_each_target(env, legacy_overlap):
+    old = env["presets"] / "z-old"
+    new = env["presets"] / "a-new"
+    make_skill(old / ".agents/skills", "tdd")
+    make_skill(old / ".agents/skills", "review")
+    make_skill(new / ".agents/skills", "tdd")
+    assert skctl(env, "apply", "z-old").returncode == 0
+    record_path = env["proj"] / "skills-applied.json"
+    original = json.loads(record_path.read_text(encoding="utf-8"))["presets"]["z-old"]
+    assert skctl(env, "apply", "a-new", "--agent", "universal").returncode == 0
+    recorded = json.loads(record_path.read_text(encoding="utf-8"))
+    assert ".agents/skills/tdd" not in recorded["presets"]["z-old"]["placements"]
+    assert ".claude/skills/tdd" in recorded["presets"]["z-old"]["placements"]
+    if legacy_overlap:
+        recorded["presets"]["z-old"] = original
+        record_path.write_text(json.dumps(recorded), encoding="utf-8")
+
+    (new / ".agents/skills/tdd/SKILL.md").write_text("# New version\n", encoding="utf-8")
+    result = skctl(env, "apply", "--resync")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (env["proj"] / ".agents/skills/tdd").resolve() == new / ".agents/skills/tdd"
+    assert (env["proj"] / ".claude/skills/tdd").resolve() == old / ".agents/skills/tdd"
+    assert (env["proj"] / ".agents/skills/tdd/SKILL.md").read_text() == "# New version\n"
+
+
+@pytest.mark.parametrize("global_apply", [False, True])
+def test_replacing_a_presets_last_skill_removes_its_stale_record(env, global_apply):
+    flags = ["-g"] if global_apply else []
+    assert skctl(env, "apply", "otherp", *flags).returncode == 0
+    assert skctl(env, "apply", "mypreset", "-s", "tdd", *flags).returncode == 0
+    if global_apply:
+        applied = json.loads((env["home"] / ".skill-ctl/applied.json").read_text())
+        recorded = applied["projects"][str(env["home"])]
+    else:
+        recorded = json.loads((env["proj"] / "skills-applied.json").read_text())["presets"]
+    assert list(recorded) == ["mypreset"]
+
+
 def test_presets_applied_lists_all_projects(env):
     assert skctl(env, "apply", "mypreset", "-s", "tdd").returncode == 0
     res = skctl(env, "presets", "applied")
@@ -346,7 +385,11 @@ def test_all_presets_offers_every_skill_wherever_it_is_filed(env, tmp_path):
     # 'review' only exists in mypreset, 'tdd' in both; fzf saw them all at once.
     record = json.loads((env["proj"] / "skills-applied.json").read_text())["presets"]
     assert "mypreset" in record
-    assert sorted(record["mypreset"]["skills"]) == ["review", "tdd"]
+    assert record["mypreset"]["skills"] == ["review"]
+    assert record["otherp"]["skills"] == ["tdd"]
+    assert (env["proj"] / ".agents/skills/tdd").resolve() == (
+        env["presets"] / "otherp/.agents/skills/tdd"
+    )
 
 
 def test_all_presets_applies_each_presets_share(env, tmp_path):

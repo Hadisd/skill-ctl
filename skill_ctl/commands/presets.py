@@ -1476,6 +1476,19 @@ def resync_project(target_project: Path, recorded: dict, dry_run: bool = False) 
         else:
             by_target = {target: wanted for target in targets}
         for target, selected in by_target.items():
+            # Older records may still claim links a later apply gave to another preset.
+            selected = dict(selected)
+            for name in list(selected):
+                destination = target_project / target / name
+                if not links_into_preset(destination, preset_dir) and any(
+                    links_into_preset(destination, preset_path(other))
+                    for other in recorded
+                    if other != preset_name
+                ):
+                    print_warn(f"Kept {target}/{name}: linked to another preset.")
+                    selected.pop(name)
+            if not selected:
+                continue
             if dry_run:
                 preview_apply(
                     target_project, preset_name, selected, [target], use_copy, False, owned

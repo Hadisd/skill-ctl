@@ -135,9 +135,36 @@ def record_apply(
         )
         entry["placements"] = sorted(set(previous_paths) | placed)
         entry["copies"] = sorted((set(previous.get("copies", [])) - placed) | set(copies or []))
-        for other_name, other_entry in in_project.items():
-            if other_name != preset and "copies" in other_entry:
-                other_entry["copies"] = sorted(set(other_entry["copies"]) - placed)
+        for other_name, other_entry in list(in_project.items()):
+            if other_name == preset:
+                continue
+            other_paths = set(
+                other_entry.get(
+                    "placements",
+                    [
+                        f"{target}/{name}"
+                        for target in other_entry.get("targets", [])
+                        for name in other_entry.get("skills", [])
+                    ],
+                )
+            )
+            if not other_paths & placed:
+                continue
+            remaining_paths = other_paths - placed
+            if not remaining_paths:
+                in_project.pop(other_name)
+                continue
+            other_entry["placements"] = sorted(remaining_paths)
+            names = {Path(path).name for path in remaining_paths}
+            targets_left = {Path(path).parent.as_posix() for path in remaining_paths}
+            other_entry["skills"] = [
+                name for name in other_entry.get("skills", []) if name in names
+            ]
+            other_entry["targets"] = [
+                target for target in other_entry.get("targets", []) if target in targets_left
+            ]
+            if "copies" in other_entry:
+                other_entry["copies"] = sorted(set(other_entry["copies"]) & remaining_paths)
     elif "copies" in previous:
         entry["copies"] = previous["copies"]
 

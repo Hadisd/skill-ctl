@@ -1,5 +1,6 @@
 """Backing ~/.skill-ctl up to a GitHub repository (backup init/push/pull/status)."""
 
+import hashlib
 import json
 import os
 import re
@@ -152,75 +153,147 @@ def backed_up_global_entries() -> set[tuple[str, str]]:
     }
 
 
+def _dir_digest(root: Path) -> str:
+    """Fingerprint the files copied into a global skill backup."""
+    ignored = {".git", "node_modules", "__pycache__", ".DS_Store"}
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root)
+        if any(part in ignored or part.endswith(".pyc") for part in rel.parts):
+            continue
+        if path.is_file():
+            try:
+                content_digest = hashlib.sha256(path.read_bytes()).digest()
+            except OSError:
+                continue
+            digest.update(rel.as_posix().encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(content_digest)
+    return digest.hexdigest()
+
+
 def _dirs_differ(left: Path, right: Path) -> bool:
     """Compare two skill directories by relative file paths and contents."""
-    ignored = {".git", "node_modules", "__pycache__", ".DS_Store"}
-
-    def snapshot(root: Path) -> dict[str, bytes]:
-        files: dict[str, bytes] = {}
-        for path in root.rglob("*"):
-            rel = path.relative_to(root)
-            if any(part in ignored or part.endswith(".pyc") for part in rel.parts):
-                continue
-            if path.is_file():
-                try:
-                    files[rel.as_posix()] = path.read_bytes()
-                except OSError:
-                    pass
-        return files
-
-    return snapshot(left) != snapshot(right)
+    return _dir_digest(left) != _dir_digest(right)
 
 
-def uncommitted_global_changes(config: Optional[dict] = None) -> list[str]:
-    """Compare local global skills with ~/.skill-ctl/global without modifying disk."""
+def _global_sync_state() -> dict[str, dict[str, str]]:
+    """The last installed global snapshot on this device; never backed up."""
+    try:
+        data = json.loads((BASE_DIR / "global-sync.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        directory: {
+            name: value
+            for name, value in skills.items()
+            if isinstance(value, str)
+            and name
+            and not name.startswith(".")
+            and "/" not in name
+            and "\\" not in name
+        }
+        for directory, skills in data.items()
+        if isinstance(skills, dict)
+    }
+
+
+def global_sync_entries() -> set[tuple[str, str]]:
+    return {
+        (directory, name) for directory, skills in _global_sync_state().items() for name in skills
+    }
+
+
+def _remember_global_skills(config: Optional[dict] = None) -> None:
+    state = _global_sync_state()
+    local_by_dir = collect_local_global_skills_by_dir(config)
+    for directory in _global_rel_dirs(config):
+        state[directory] = {
+            name: _dir_digest(path) for name, path in local_by_dir.get(directory, {}).items()
+        }
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    path = BASE_DIR / "global-sync.json"
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def _global_skill_changes(
+    config: Optional[dict] = None, sync: bool = False
+) -> list[tuple[str, str, str, Optional[Path]]]:
     local_by_dir = collect_local_global_skills_by_dir(config)
     staged_by_dir = backed_up_global_skills_by_dir()
-    changes: list[str] = []
-    for rel_dir in sorted(set(local_by_dir) | set(staged_by_dir)):
-        local = local_by_dir.get(rel_dir, {})
-        staged = staged_by_dir.get(rel_dir, {})
-        for name in sorted(set(local) | set(staged)):
-            rel = f"global/{rel_dir}/{name}"
-            if name not in staged:
-                changes.append(f"A\t{rel}")
-            elif name not in local:
-                changes.append(f"D\t{rel}")
-            elif _dirs_differ(local[name], staged[name]):
-                changes.append(f"M\t{rel}")
+    baseline = _global_sync_state() if sync else {}
+    changes = []
+    for directory in sorted(_global_rel_dirs(config)):
+        local = local_by_dir.get(directory, {})
+        staged = staged_by_dir.get(directory, {})
+        previous = baseline.get(directory, {})
+        for name in sorted(set(local) | set(staged) | set(previous)):
+            local_digest = _dir_digest(local[name]) if name in local else None
+            staged_digest = _dir_digest(staged[name]) if name in staged else None
+            if sync:
+                previous_digest = previous.get(name)
+                if local_digest == previous_digest:
+                    continue
+                if staged_digest not in (previous_digest, local_digest):
+                    changes.append(("C", directory, name, local.get(name)))
+                    continue
+            if local_digest != staged_digest:
+                action = "D" if name not in local else ("A" if name not in staged else "M")
+                changes.append((action, directory, name, local.get(name)))
     return changes
 
 
-def stage_global_skills(config: Optional[dict] = None) -> tuple[list[str], list[str]]:
-    """Mirror standalone global skills across all agent directories into ~/.skill-ctl/global."""
-    local_by_dir = collect_local_global_skills_by_dir(config)
+def uncommitted_global_changes(config: Optional[dict] = None, sync: bool = False) -> list[str]:
+    """Compare local global skills with ~/.skill-ctl/global without modifying disk."""
+    return [
+        f"{action}\tglobal/{directory}/{name}"
+        for action, directory, name, _ in _global_skill_changes(config, sync)
+    ]
+
+
+def stage_global_skills(
+    config: Optional[dict] = None, sync: bool = False
+) -> tuple[list[str], list[str]]:
+    """Mirror standalone global skills across all agent directories into ~/.skill-ctl/global.
+
+    Only folders listed in this device's global_skill_dirs are touched, so a device
+    with a narrower config never deletes another device's backed-up folders.
+    Sync compares local changes with this device's last installed snapshot.
+    """
+    changes = _global_skill_changes(config, sync)
+    conflicts = [
+        f"global/{directory}/{name}" for action, directory, name, _ in changes if action == "C"
+    ]
+    if conflicts:
+        print_error("Global skills changed both locally and in the backup; sync stopped.")
+        for path in conflicts:
+            console.print(f"  {path}", markup=False)
+        print_warn(
+            f"Reconcile the copies in your global skill folders and {BASE_DIR / 'global'}, then retry."
+        )
+        raise SystemExit(1)
     global_root = BASE_DIR / "global"
-    existing_by_dir = backed_up_global_skills_by_dir()
-
     removed_names: set[str] = set()
-    for rel_dir, staged_skills in existing_by_dir.items():
-        local_skills = local_by_dir.get(rel_dir, {})
-        for name, staged_path in staged_skills.items():
-            if name not in local_skills:
-                removed_names.add(name)
-                shutil.rmtree(staged_path, ignore_errors=True)
-                prune_empty_dirs(staged_path.parent, global_root)
-
     ignore_patterns = shutil.ignore_patterns(
         ".git", "node_modules", "__pycache__", ".DS_Store", "*.pyc"
     )
-    all_local_names: set[str] = set()
-    for rel_dir, local_skills in sorted(local_by_dir.items()):
-        dest_skills_dir = global_root / rel_dir
-        for name, src_path in sorted(local_skills.items()):
-            all_local_names.add(name)
-            dst_path = dest_skills_dir / name
-            if dst_path.is_symlink():
-                dst_path.unlink()
-            elif dst_path.exists():
-                if not _dirs_differ(src_path, dst_path):
-                    continue
-                shutil.rmtree(dst_path)
+    all_local_names = {
+        name for skills in collect_local_global_skills_by_dir(config).values() for name in skills
+    }
+    for action, directory, name, src_path in changes:
+        dst_path = global_root / directory / name
+        if dst_path.is_symlink():
+            dst_path.unlink()
+        elif dst_path.exists():
+            shutil.rmtree(dst_path)
+        if action == "D":
+            removed_names.add(name)
+            prune_empty_dirs(dst_path.parent, global_root)
+        else:
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(src_path, dst_path, ignore=ignore_patterns)
 
@@ -228,15 +301,24 @@ def stage_global_skills(config: Optional[dict] = None) -> tuple[list[str], list[
     home_lock = Path.home() / ".agents" / ".skill-lock.json"
     staged_lock = global_root / ".agents" / ".skill-lock.json"
     merged_entries: dict = {}
+    changed_names = {name for action, _, name, _ in changes if action in ("A", "M")}
     for lock_path in (staged_lock, home_lock):
         if lock_path.is_file():
             try:
                 raw = json.loads(lock_path.read_text(encoding="utf-8"))
                 if isinstance(raw, dict) and isinstance(raw.get("skills"), dict):
-                    merged_entries.update(raw["skills"])
+                    entries = raw["skills"]
+                    if sync and lock_path == home_lock:
+                        entries = {
+                            name: value
+                            for name, value in entries.items()
+                            if name in changed_names or name not in merged_entries
+                        }
+                    merged_entries.update(entries)
             except (OSError, ValueError):
                 pass
-    kept_entries = {k: v for k, v in merged_entries.items() if k in all_local_names}
+    still_staged = {name for skills in backed_up_global_skills_by_dir().values() for name in skills}
+    kept_entries = {k: v for k, v in merged_entries.items() if k in still_staged}
     if kept_entries:
         staged_lock.parent.mkdir(parents=True, exist_ok=True)
         staged_lock.write_text(
@@ -247,9 +329,11 @@ def stage_global_skills(config: Optional[dict] = None) -> tuple[list[str], list[
         staged_lock.unlink()
         prune_empty_dirs(staged_lock.parent, global_root)
 
-    if not all_local_names and global_root.exists():
+    if not still_staged and global_root.exists():
         shutil.rmtree(global_root, ignore_errors=True)
 
+    if not sync:
+        _remember_global_skills(config)
     return sorted(all_local_names), sorted(removed_names - all_local_names)
 
 
@@ -262,10 +346,17 @@ def restore_global_skills(
     """Restore global skills from ~/.skill-ctl/global into global agent directories."""
     presets_dir = BASE_DIR / "presets"
     home = Path.home()
-    staged_by_dir = backed_up_global_skills_by_dir()
+    configured = set(_global_rel_dirs(config))
+    staged_by_dir = {
+        rel_dir: skills
+        for rel_dir, skills in backed_up_global_skills_by_dir().items()
+        if rel_dir in configured
+    }
 
     # Handle explicit per-directory or skill-name removals
-    entries_to_remove: set[tuple[str, str]] = set(removed_entries or ())
+    entries_to_remove: set[tuple[str, str]] = {
+        entry for entry in (removed_entries or ()) if entry[0] in configured
+    }
     if removed_names:
         for rel_dir in _global_rel_dirs(config):
             for name in removed_names:
@@ -376,9 +467,7 @@ def restore_global_skills(
     if staged_lock.is_file():
         try:
             staged_data = json.loads(staged_lock.read_text(encoding="utf-8"))
-            staged_skills = (
-                staged_data.get("skills", {}) if isinstance(staged_data, dict) else {}
-            )
+            staged_skills = staged_data.get("skills", {}) if isinstance(staged_data, dict) else {}
             if isinstance(staged_skills, dict) and staged_skills:
                 home_lock = home / ".agents" / ".skill-lock.json"
                 home_data: dict = {"version": 1, "skills": {}}
@@ -395,13 +484,13 @@ def restore_global_skills(
         except (OSError, ValueError):
             pass
 
+    _remember_global_skills(config)
     if restored_names:
         dirs_label = ", ".join(restored_dirs) if restored_dirs else "~/.agents/skills"
         print_success(
             f"Restored {len(restored_names)} global skill{'s' if len(restored_names) != 1 else ''} into {dirs_label}"
         )
     return len(restored_names)
-
 
 
 def git(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
@@ -797,7 +886,9 @@ def backup_push(
         console.print((result.stderr or result.stdout).rstrip())
         explain_push_failure(result.stderr or "", url or "")
         sys.exit(result.returncode)
-    print_success("Presets and global skills backed up." if include_global else "Presets backed up.")
+    print_success(
+        "Presets and global skills backed up." if include_global else "Presets backed up."
+    )
 
 
 def commit_presets(message: str, include_config: bool = False, presets_only: bool = False) -> None:

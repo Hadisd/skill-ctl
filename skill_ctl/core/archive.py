@@ -56,6 +56,7 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 manifest.get("preset"), str
             ):
                 raise ValueError("unsupported preset archive")
+            destination.mkdir(parents=True, exist_ok=True)
             for member in archive.infolist():
                 member_path = Path(member.filename)
                 if member_path.is_absolute() or ".." in member_path.parts:
@@ -65,8 +66,10 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 if not member.filename.startswith("preset/"):
                     raise ValueError(f"unexpected archive entry: {member.filename}")
                 target = destination / member_path.relative_to("preset")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if not member.is_dir():
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
                     with archive.open(member) as source, target.open("wb") as output:
                         shutil.copyfileobj(source, output)
     except (OSError, zipfile.BadZipFile) as error:
