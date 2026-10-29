@@ -381,7 +381,10 @@ def test_backup_global_preserves_all_agent_directories(tmp_path, remote):
 
     cursor_dir = home1 / ".cursor" / "skills"
     cursor_dir.mkdir(parents=True)
-    (cursor_dir / "caveman").symlink_to("../../.agents/skills/caveman", target_is_directory=True)
+    (cursor_dir / "caveman").symlink_to(
+        Path("../../.agents/skills/caveman"), target_is_directory=True
+    )
+    assert (cursor_dir / "caveman" / "SKILL.md").is_file()
 
     hermes_skill = home1 / ".hermes" / "skills" / "hermes-only"
     hermes_skill.mkdir(parents=True)

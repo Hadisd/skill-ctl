@@ -35,6 +35,12 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Enable Developer Mode and symlinks (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+          git config --global core.symlinks true
+
       - name: Run test suite
         run: uv run --extra dev pytest -n auto
 
