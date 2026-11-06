@@ -86,11 +86,17 @@ def run_npx_skills(
         ):
             env.pop(k, None)
 
+    # `npx --yes` skips npm's own "Need to install skills@x. Ok to proceed?" prompt.
+    # Without it, a captured (non-streamed) run hides that prompt and hangs forever.
+    base = [npx, "--yes", "skills"]
+
     if capture:
         proc = subprocess.Popen(
-            [npx, "skills"] + cmd_args,
+            base + cmd_args,
             cwd=cwd,
             env=env,
+            # Nobody can see or answer a prompt when output is hidden, so fail fast.
+            stdin=None if stream else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -107,4 +113,4 @@ def run_npx_skills(
         code = proc.wait()
         return code, "".join(lines)
 
-    return subprocess.run([npx, "skills"] + cmd_args, cwd=cwd, env=env).returncode
+    return subprocess.run(base + cmd_args, cwd=cwd, env=env).returncode
