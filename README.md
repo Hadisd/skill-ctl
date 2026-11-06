@@ -669,7 +669,7 @@ npx:
 > [!WARNING]
 > Skills run with the agent's permissions. Read `SKILL.md` and inspect included scripts before installation. Check the package source before using `-y` or `--all`. Use `--copy` if you do not want a symlink to follow later source changes.
 
-`skctl` manages skill locations and preset membership. It does not inspect skills for malicious or unsafe instructions.
+`skctl` manages skill locations and preset membership. It does not inspect skills for malicious or unsafe instructions, so review every skill yourself before you use it.
 
 ## Development
 
