@@ -6,6 +6,7 @@ present errors, choose names, and replace existing presets.
 
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from datetime import datetime, timezone
@@ -81,10 +82,49 @@ def file_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def preset_files(root: Path) -> set[Path]:
+    """Relative paths of the regular files under *root*, never following symlinks."""
+    found = set()
+    for directory, _dirs, names in os.walk(root):
+        for name in names:
+            path = Path(directory) / name
+            if not path.is_symlink():
+                found.add(path.relative_to(root))
+    return found
+
+
+def preset_symlinks(root: Path) -> list[Path]:
+    """Relative paths of every symlink (file or directory) under *root*."""
+    found = []
+    for directory, dirs, names in os.walk(root):
+        for name in (*dirs, *names):
+            path = Path(directory) / name
+            if path.is_symlink():
+                found.append(path.relative_to(root))
+    return sorted(found)
+
+
+def copy_preset(source: Path, target: Path) -> list[Path]:
+    """Copy an untrusted preset, dropping symlinks instead of following them.
+
+    A symlink in a downloaded preset could point at a local secret; copying its
+    target would turn that secret into a plain file in the preset (and in the
+    next backup push). Returns the skipped symlinks, relative to *source*.
+    """
+    skipped = preset_symlinks(source)
+    shutil.copytree(
+        source,
+        target,
+        symlinks=True,
+        ignore=lambda directory, names: [n for n in names if (Path(directory) / n).is_symlink()],
+    )
+    return skipped
+
+
 def preset_changes(current: Path, incoming: Path) -> list[tuple[str, Path]]:
     """Return added, removed, and modified files between two preset directories."""
-    current_files = {path.relative_to(current) for path in current.rglob("*") if path.is_file()}
-    incoming_files = {path.relative_to(incoming) for path in incoming.rglob("*") if path.is_file()}
+    current_files = preset_files(current)
+    incoming_files = preset_files(incoming)
     changes = [("add", path) for path in sorted(incoming_files - current_files)]
     changes += [("remove", path) for path in sorted(current_files - incoming_files)]
     changes += [

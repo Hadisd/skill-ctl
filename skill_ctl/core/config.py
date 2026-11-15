@@ -90,6 +90,11 @@ npx:
   # scope check in the upstream cli.mjs as Node loads it. Turn this off to run
   # `npx skills` exactly as shipped and answer the question yourself.
   patch_scope_prompt: true
+  # Hand your `gh auth token` to `npx skills` so GitHub lookups are not rate
+  # limited. Off by default: `npx skills` is an unpinned npm package and the
+  # token usually has broad scopes. A GITHUB_TOKEN/GH_TOKEN you already export
+  # is always passed through.
+  pass_github_token: false
 """,
     "global_skill_dirs": """
 # 10. Global skill folders included in `skctl search` and preset creation
@@ -206,7 +211,7 @@ def load_config() -> dict:
         },
         "custom_agents": {},
         "backup": {"auto_push": False},
-        "npx": {"patch_scope_prompt": True},
+        "npx": {"patch_scope_prompt": True, "pass_github_token": False},
         "theme": "default",
         "global_skill_dirs": [
             "~/.agents/skills",

@@ -8,8 +8,14 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
+from skill_ctl.archive import (
+    copy_preset,
+    preset_changes,
+    preset_files,
+    preset_symlinks,
+    safe_extract_preset,
+)
 from skill_ctl.archive import export_preset as write_archive
-from skill_ctl.archive import preset_changes, safe_extract_preset
 from skill_ctl.backup import maybe_auto_push
 from skill_ctl.config import load_config
 from skill_ctl.constants import PRESETS_DIR, PREVIEW_TOGGLE_BIND, preview_window_options
@@ -71,11 +77,7 @@ def preset_import(
         changes = (
             preset_changes(target, extracted)
             if target.exists()
-            else [
-                ("add", path.relative_to(extracted))
-                for path in extracted.rglob("*")
-                if path.is_file()
-            ]
+            else [("add", path) for path in sorted(preset_files(extracted))]
         )
         print_header(f"Import preview: '{manifest['preset']}' -> '{target_name}'")
         for action, path in changes:
@@ -89,7 +91,7 @@ def preset_import(
             sys.exit(1)
         if target.exists():
             shutil.rmtree(target)
-        shutil.copytree(extracted, target)
+        copy_preset(extracted, target)
     print_success(f"Imported preset '{target_name}' from {archive_path}")
     maybe_auto_push(f"import preset {target_name}")
 
@@ -256,15 +258,13 @@ def import_github_presets(
             changes = (
                 preset_changes(target, source)
                 if target.exists()
-                else [
-                    ("add", path.relative_to(source))
-                    for path in source.rglob("*")
-                    if path.is_file()
-                ]
+                else [("add", path) for path in sorted(preset_files(source))]
             )
             print_header(f"Import preview: '{source_name}' -> '{target_name}'")
             for action, path in changes:
                 console.print(f"  {action:6} {path}")
+            for link in preset_symlinks(source):
+                print_warn(f"Skipping symlink (not imported): {link}")
             if not changes:
                 console.print("  [dim]no file changes[/dim]")
             if dry_run:
@@ -276,6 +276,6 @@ def import_github_presets(
                 continue
             if target.exists():
                 shutil.rmtree(target)
-            shutil.copytree(source, target)
+            copy_preset(source, target)
             print_success(f"Imported preset '{target_name}' from {repository}")
             maybe_auto_push(f"import preset {target_name}")

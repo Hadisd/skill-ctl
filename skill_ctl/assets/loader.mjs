@@ -21,6 +21,9 @@ export async function load(url, context, nextLoad) {
   if (source.includes('options.global = false')) return result;
 
   if (!source.includes(MARKER)) {
+    // Upstream 1.8+ split cli.mjs into chunks and defaults to project scope when -y is used.
+    if (source.includes('./_chunks/')) return result;
+
     process.stderr.write(
       '!  skill-ctl: upstream cli.mjs changed, so it runs unpatched and may ask for the install scope.\n'
       + '   Silence this by putting `npx:` / `  patch_scope_prompt: false` in ~/.skill-ctl/config.yaml\n'

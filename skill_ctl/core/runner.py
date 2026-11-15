@@ -45,6 +45,26 @@ def run_npx_skills(
     cmd_args = list(args)
     env = dict(os.environ)
 
+    # Opt-in only (`npx.pass_github_token: true`): `npx --yes skills` runs an unpinned npm
+    # package, and the `gh` login usually carries broad scopes, so it must not be handed to
+    # that process unless the user asked. A token already exported in the environment is
+    # inherited as before. The upside is avoiding the 60 req/hr unauthenticated rate limit
+    # that makes npx skills fall back to cloning whole repositories.
+    if (
+        "GITHUB_TOKEN" not in env
+        and "GH_TOKEN" not in env
+        and load_config().get("npx", {}).get("pass_github_token", False)
+    ):
+        try:
+            from skill_ctl.commands.catalog import get_github_token
+
+            gh_token = get_github_token()
+            if gh_token:
+                env["GITHUB_TOKEN"] = gh_token
+                env["GH_TOKEN"] = gh_token
+        except Exception:
+            pass
+
     # For 'add' without -g/--global, target project scope (-p) and inject the loader
     # to avoid the redundant "Installation scope: Project / Global" prompt.
     #

@@ -4,7 +4,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Union
 
 import typer
 from rich.prompt import Confirm
@@ -495,7 +495,8 @@ def _run_update_in_dir(
     keep_deleted: bool = False,
     interactive: bool = False,
     stream: bool = True,
-) -> tuple[int, list[str]]:
+    return_output: bool = False,
+) -> Union[tuple[int, list[str]], tuple[int, list[str], str]]:
     """Run npx skills update in cwd, stream output, and handle any upstream deletions."""
     target = target_dir or cwd
     try:
@@ -506,6 +507,8 @@ def _run_update_in_dir(
     deleted = handle_upstream_deletions(
         target, out, prune=prune, keep_deleted=keep_deleted, interactive=interactive
     )
+    if return_output:
+        return code, deleted, out
     return code, deleted
 
 
@@ -595,25 +598,36 @@ def update(
             workers = min(len(updateable), max(1, concurrency))
             print_header(f"Updating {len(updateable)} presets concurrently ({workers} workers)")
 
-            def update_one(p: Path) -> tuple[str, int, list[str]]:
-                code, deleted = _run_update_in_dir(
+            def update_one(p: Path) -> tuple[str, int, list[str], str]:
+                res = _run_update_in_dir(
                     args,
                     p,
                     prune=prune,
                     keep_deleted=keep_deleted,
                     interactive=False,
                     stream=False,
+                    return_output=True,
                 )
-                return p.name, code, deleted
+                code = res[0]
+                deleted = res[1]
+                out = res[2] if len(res) > 2 else ""
+                return p.name, code, deleted, out
 
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(update_one, path): path for path in updateable}
+                completed = 0
+                total = len(updateable)
                 for fut in as_completed(futures):
-                    p_name, code, _ = fut.result()
+                    completed += 1
+                    p_name, code, _, out = fut.result()
                     if code != 0:
                         failed.append(p_name)
+                        print_error(f"[{completed}/{total}] Preset '{p_name}' failed to update.")
+                        if out:
+                            for err_line in out.strip().splitlines()[-6:]:
+                                print_warn(f"    {err_line}")
                     else:
-                        print_success(f"Preset '{p_name}' updated.")
+                        print_success(f"[{completed}/{total}] Preset '{p_name}' updated.")
 
         if len(failed) != len(updateable):
             maybe_auto_push("update all presets")

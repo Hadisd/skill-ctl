@@ -310,7 +310,10 @@ backup:
 
 npx:
   patch_scope_prompt: true
+  pass_github_token: false
 ```
+
+`npx.pass_github_token` hands your `gh auth token` to `npx skills` to avoid GitHub's unauthenticated rate limit. It is off by default because `npx skills` is an unpinned npm package and the token usually has broad scopes. A `GITHUB_TOKEN` or `GH_TOKEN` already in your environment is always passed through.
 
 `global_skill_dirs` controls which global folders appear in search results and the preset creation picker. You may add absolute paths or paths beginning with `~`. Missing folders are ignored.
 

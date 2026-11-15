@@ -581,6 +581,111 @@ def test_export_preset_skips_external_symlinks(tmp_path):
         assert "preset/secret_link.txt" not in names
 
 
+def _make_symlinked_preset(root):
+    """A preset whose symlinks point at a local secret, as a malicious repo would ship."""
+    secret = root / "secret" / "id_rsa"
+    secret.parent.mkdir(parents=True)
+    secret.write_text("TOP-SECRET-TOKEN\n", encoding="utf-8")
+    preset = root / "evil" / "presets" / "innocent"
+    (preset / "skills" / "foo").mkdir(parents=True)
+    (preset / "skills" / "foo" / "SKILL.md").write_text("ok\n", encoding="utf-8")
+    try:
+        (preset / "skills" / "foo" / "notes.txt").symlink_to(secret)
+        (preset / "linked_dir").symlink_to(secret.parent, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlink creation not permitted in this environment")
+    return preset, secret
+
+
+def test_copy_preset_drops_symlinks_instead_of_following(tmp_path):
+    from skill_ctl.archive import copy_preset, preset_changes, preset_files
+
+    preset, _ = _make_symlinked_preset(tmp_path)
+    assert preset_files(preset) == {Path("skills/foo/SKILL.md")}
+
+    target = tmp_path / "copy"
+    skipped = copy_preset(preset, target)
+
+    assert sorted(map(str, skipped)) == ["linked_dir", str(Path("skills/foo/notes.txt"))]
+    assert [p.name for p in target.rglob("*") if p.is_file()] == ["SKILL.md"]
+    assert not any(p.is_symlink() for p in target.rglob("*"))
+    assert "TOP-SECRET-TOKEN" not in "".join(
+        p.read_text() for p in target.rglob("*") if p.is_file()
+    )
+    assert preset_changes(target, preset) == []
+
+
+def test_github_import_does_not_copy_symlink_targets(tmp_path, monkeypatch):
+    from skill_ctl import preset_remote
+
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+    preset, _ = _make_symlinked_preset(tmp_path)
+    repo = preset.parent.parent
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "x"], check=True)
+
+    presets_dir = tmp_path / "home" / "presets"
+    presets_dir.mkdir(parents=True)
+    pushed = []
+    monkeypatch.setattr(preset_remote, "PRESETS_DIR", presets_dir)
+    monkeypatch.setattr(preset_remote, "maybe_auto_push", lambda what: pushed.append(what))
+
+    preset_remote.import_github_presets(str(repo), ["innocent"])
+
+    imported = presets_dir / "innocent"
+    assert (imported / "skills" / "foo" / "SKILL.md").is_file()
+    assert not (imported / "skills" / "foo" / "notes.txt").exists()
+    assert not (imported / "linked_dir").exists()
+    assert pushed, "the import itself should still succeed"
+
+
+@pytest.fixture
+def npx_env(monkeypatch):
+    """Run run_npx_skills against a fake npx and report the environment it was given."""
+    from skill_ctl import catalog, runner
+
+    seen = {}
+
+    class Result:
+        returncode = 0
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/bin/npx")
+    monkeypatch.setattr(
+        runner.subprocess, "run", lambda cmd, cwd=None, env=None: seen.update(env=env) or Result()
+    )
+    monkeypatch.setattr(catalog, "get_github_token", lambda: "gh-login-token")
+
+    def run(npx_config):
+        monkeypatch.setattr(runner, "load_config", lambda: {"npx": npx_config})
+        runner.run_npx_skills(["update"])
+        return seen["env"]
+
+    return run
+
+
+def test_npx_does_not_receive_gh_login_token_by_default(npx_env):
+    env = npx_env({})
+    assert "GITHUB_TOKEN" not in env and "GH_TOKEN" not in env
+    env = npx_env({"pass_github_token": False})
+    assert "GITHUB_TOKEN" not in env and "GH_TOKEN" not in env
+
+
+def test_npx_receives_gh_login_token_only_when_opted_in(npx_env):
+    env = npx_env({"pass_github_token": True})
+    assert env["GITHUB_TOKEN"] == env["GH_TOKEN"] == "gh-login-token"
+
+
+def test_npx_keeps_token_already_exported(npx_env, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "user-exported")
+    env = npx_env({})
+    assert env["GITHUB_TOKEN"] == "user-exported"
+
+
 def test_cli_lazy_exports_complete():
     from skill_ctl import cli
 
