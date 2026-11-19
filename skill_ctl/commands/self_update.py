@@ -16,6 +16,9 @@ from skill_ctl import __version__
 from skill_ctl.ui import print_error, print_success
 
 LATEST_RELEASE_URL = "https://api.github.com/repos/Hadisd/skill-ctl/releases/latest"
+# The only place a wheel is trusted to come from; anything else in the API
+# response falls back to the tag-pinned git source below.
+ASSET_URL_PREFIX = "https://github.com/Hadisd/skill-ctl/releases/download/"
 
 
 @dataclass(frozen=True)
@@ -51,8 +54,9 @@ def parse_release(payload: object) -> Release:
     for asset in assets:
         if not isinstance(asset, dict):
             raise SelfUpdateError("Invalid release asset: expected an object.")
-        if asset.get("name") == filename and asset.get("browser_download_url"):
-            return Release(version, tag, str(asset["browser_download_url"]))
+        url = str(asset.get("browser_download_url") or "")
+        if asset.get("name") == filename and url.startswith(ASSET_URL_PREFIX):
+            return Release(version, tag, url)
     return Release(version, tag, f"git+https://github.com/Hadisd/skill-ctl@{tag}")
 
 

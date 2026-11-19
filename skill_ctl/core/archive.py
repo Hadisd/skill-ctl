@@ -11,8 +11,11 @@ import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Iterable, Optional
 
 ARCHIVE_FORMAT = 1
+MAX_ARCHIVE_FILES = 10_000
+MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 
 
 def export_preset(source: Path, name: str, destination: Path, skills: list[str]) -> None:
@@ -57,8 +60,14 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 manifest.get("preset"), str
             ):
                 raise ValueError("unsupported preset archive")
+            members = archive.infolist()
+            if len(members) > MAX_ARCHIVE_FILES:
+                raise ValueError(f"too many entries (limit {MAX_ARCHIVE_FILES})")
+            if sum(member.file_size for member in members) > MAX_ARCHIVE_BYTES:
+                raise ValueError(f"archive expands beyond {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB")
             destination.mkdir(parents=True, exist_ok=True)
-            for member in archive.infolist():
+            root = destination.resolve()
+            for member in members:
                 member_path = Path(member.filename)
                 if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError(f"unsafe archive entry: {member.filename}")
@@ -67,6 +76,9 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 if not member.filename.startswith("preset/"):
                     raise ValueError(f"unexpected archive entry: {member.filename}")
                 target = destination / member_path.relative_to("preset")
+                # Catches what the checks above cannot, e.g. drive letters on Windows.
+                if not target.resolve().is_relative_to(root):
+                    raise ValueError(f"unsafe archive entry: {member.filename}")
                 if member.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                 else:
@@ -119,6 +131,44 @@ def copy_preset(source: Path, target: Path) -> list[Path]:
         ignore=lambda directory, names: [n for n in names if (Path(directory) / n).is_symlink()],
     )
     return skipped
+
+
+def link_escapes(path: Path, root: Path) -> bool:
+    """Whether *path* is a symlink that resolves outside *root* (a resolved path)."""
+    if not path.is_symlink():
+        return False
+    try:
+        return not path.resolve().is_relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return True
+
+
+def copy_skill_tree(
+    source: Path,
+    destination: Path,
+    ignore: Optional[Callable[[str, list[str]], Iterable[str]]] = None,
+) -> list[Path]:
+    """Copy a skill folder, dropping symlinks that resolve outside of it.
+
+    Following such a link would copy an unrelated local file (an SSH key, say)
+    into the destination; for a backup that destination is pushed to a remote.
+    Links that stay inside the folder are kept as links. Returns the dropped
+    links, relative to *source*.
+    """
+    root = source.resolve()
+    dropped: list[Path] = []
+
+    def skip(directory: str, names: list[str]) -> set[str]:
+        skipped = set(ignore(directory, names)) if ignore else set()
+        for name in names:
+            path = Path(directory) / name
+            if name not in skipped and link_escapes(path, root):
+                skipped.add(name)
+                dropped.append(path.relative_to(source))
+        return skipped
+
+    shutil.copytree(source, destination, symlinks=True, ignore=skip)
+    return sorted(dropped)
 
 
 def preset_changes(current: Path, incoming: Path) -> list[tuple[str, Path]]:

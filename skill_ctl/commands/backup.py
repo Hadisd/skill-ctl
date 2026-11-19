@@ -14,6 +14,7 @@ from typing import Annotated, Literal, Optional
 
 import typer
 
+from skill_ctl.archive import copy_skill_tree, link_escapes
 from skill_ctl.config import ensure_config, load_config
 from skill_ctl.constants import BASE_DIR
 from skill_ctl.linker import links_into_preset, prune_empty_dirs, prune_lockfile
@@ -157,11 +158,12 @@ def _dir_digest(root: Path) -> str:
     """Fingerprint the files copied into a global skill backup."""
     ignored = {".git", "node_modules", "__pycache__", ".DS_Store"}
     digest = hashlib.sha256()
+    resolved_root = root.resolve()
     for path in sorted(root.rglob("*")):
         rel = path.relative_to(root)
         if any(part in ignored or part.endswith(".pyc") for part in rel.parts):
             continue
-        if path.is_file():
+        if path.is_file() and not link_escapes(path, resolved_root):
             try:
                 content_digest = hashlib.sha256(path.read_bytes()).digest()
             except OSError:
@@ -170,6 +172,14 @@ def _dir_digest(root: Path) -> str:
             digest.update(b"\0")
             digest.update(content_digest)
     return digest.hexdigest()
+
+
+def _copy_skill(source: Path, destination: Path, ignore=None) -> None:
+    """Copy one skill folder, never following links that leave it, and say what was dropped."""
+    for link in copy_skill_tree(source, destination, ignore):
+        print_warn(
+            f"Skipped symlink leaving the skill folder: {destination.name}/{link.as_posix()}"
+        )
 
 
 def _dirs_differ(left: Path, right: Path) -> bool:
@@ -295,7 +305,7 @@ def stage_global_skills(
             prune_empty_dirs(dst_path.parent, global_root)
         else:
             dst_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src_path, dst_path, ignore=ignore_patterns)
+            _copy_skill(src_path, dst_path, ignore_patterns)
 
     # Sync global .skill-lock.json entries for the backed-up global skills
     home_lock = Path.home() / ".agents" / ".skill-lock.json"
@@ -414,7 +424,7 @@ def restore_global_skills(
                     continue
                 shutil.rmtree(dst)
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src_path, dst)
+            _copy_skill(src_path, dst)
             restored_names.add(name)
 
     # 2. Restore all other agent directories (.claude/skills, .cursor/skills, .hermes/skills, etc.)
@@ -433,7 +443,7 @@ def restore_global_skills(
                 dst = target_dir / name
                 if not dst.exists():
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copytree(src_path, dst)
+                    _copy_skill(src_path, dst)
                 restored_names.add(name)
             continue
 
@@ -460,7 +470,7 @@ def restore_global_skills(
                 except OSError:
                     linked = False
             if not linked:
-                shutil.copytree(src_path, dst)
+                _copy_skill(src_path, dst)
             restored_names.add(name)
 
     staged_lock = BASE_DIR / "global" / ".agents" / ".skill-lock.json"

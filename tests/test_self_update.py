@@ -7,6 +7,10 @@ import pytest
 import skill_ctl.self_update as self_update
 from skill_ctl.self_update import SelfUpdateError, parse_release, parse_version
 
+TRUSTED_WHEEL = (
+    "https://github.com/Hadisd/skill-ctl/releases/download/v0.1.1/skill_ctl-0.1.1-py3-none-any.whl"
+)
+
 
 class FakeResponse:
     def __enter__(self):
@@ -22,7 +26,7 @@ class FakeResponse:
                 "assets": [
                     {
                         "name": "skill_ctl-0.1.1-py3-none-any.whl",
-                        "browser_download_url": "https://example.test/release.whl",
+                        "browser_download_url": TRUSTED_WHEEL,
                     }
                 ],
             }
@@ -89,7 +93,7 @@ def test_parse_release_reads_matching_wheel_asset():
             "assets": [
                 {
                     "name": "skill_ctl-0.1.1-py3-none-any.whl",
-                    "browser_download_url": "https://example.test/skill_ctl-0.1.1-py3-none-any.whl",
+                    "browser_download_url": TRUSTED_WHEEL,
                 }
             ],
         }
@@ -388,3 +392,23 @@ def test_cleanup_old_executables_removes_leftover_files(tmp_path, monkeypatch):
     assert old_file.exists()
     self_update.cleanup_old_executables()
     assert not old_file.exists()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.test/skill_ctl-0.1.1-py3-none-any.whl",
+        "http://github.com/Hadisd/skill-ctl/releases/download/v0.1.1/x.whl",
+        "https://github.com.evil.test/Hadisd/skill-ctl/releases/download/v0.1.1/x.whl",
+        "https://github.com/Other/skill-ctl/releases/download/v0.1.1/x.whl",
+        "--index-url=https://evil.test",
+    ],
+)
+def test_parse_release_ignores_wheel_urls_outside_this_repos_releases(url):
+    release = parse_release(
+        {
+            "tag_name": "v0.1.1",
+            "assets": [{"name": "skill_ctl-0.1.1-py3-none-any.whl", "browser_download_url": url}],
+        }
+    )
+    assert release.wheel_url == "git+https://github.com/Hadisd/skill-ctl@v0.1.1"

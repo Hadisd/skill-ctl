@@ -686,6 +686,114 @@ def test_npx_keeps_token_already_exported(npx_env, monkeypatch):
     assert env["GITHUB_TOKEN"] == "user-exported"
 
 
+@pytest.fixture
+def backup_home(tmp_path, monkeypatch):
+    """A fake HOME with a secret outside any skill folder, wired into the backup module."""
+    from skill_ctl import backup
+
+    home = tmp_path / "home"
+    secret = home / ".ssh" / "id_rsa"
+    secret.parent.mkdir(parents=True)
+    secret.write_text("TOP-SECRET-TOKEN\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setattr(backup, "BASE_DIR", home / ".skill-ctl")
+    return home, secret, {"global_skill_dirs": ["~/.agents/skills"]}
+
+
+def _skill_with_links(directory, secret):
+    """A skill with a harmless in-folder link and one pointing at a secret."""
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text("skill\n", encoding="utf-8")
+    try:
+        (directory / "alias.md").symlink_to("SKILL.md")
+        (directory / "key.txt").symlink_to(secret)
+    except OSError:
+        pytest.skip("Symlink creation not permitted in this environment")
+
+
+def _tree_text(root):
+    return "".join(p.read_text() for p in root.rglob("*") if p.is_file())
+
+
+def test_global_backup_push_does_not_copy_symlink_targets(backup_home):
+    from skill_ctl import backup
+
+    home, secret, config = backup_home
+    _skill_with_links(home / ".agents" / "skills" / "foo", secret)
+
+    backup.stage_global_skills(config)
+
+    staged = backup.BASE_DIR / "global" / ".agents" / "skills" / "foo"
+    assert (staged / "SKILL.md").is_file()
+    assert not (staged / "key.txt").exists() and not (staged / "key.txt").is_symlink()
+    assert (staged / "alias.md").read_text() == "skill\n"
+    assert "TOP-SECRET-TOKEN" not in _tree_text(backup.BASE_DIR / "global")
+    # Dropping the link must not leave the skill looking modified on every push.
+    assert backup.uncommitted_global_changes(config) == []
+
+
+def test_global_backup_restore_does_not_copy_symlink_targets(backup_home):
+    from skill_ctl import backup
+
+    home, secret, config = backup_home
+    _skill_with_links(backup.BASE_DIR / "global" / ".agents" / "skills" / "foo", secret)
+
+    backup.restore_global_skills(config=config)
+
+    restored = home / ".agents" / "skills" / "foo"
+    assert (restored / "SKILL.md").is_file()
+    assert not (restored / "key.txt").exists() and not (restored / "key.txt").is_symlink()
+    assert "TOP-SECRET-TOKEN" not in _tree_text(restored)
+
+
+def _zip_with(path, members):
+    import json
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("manifest.json", json.dumps({"format": 1, "preset": "p"}))
+        for name, data in members.items():
+            z.writestr(name, data)
+
+
+@pytest.mark.parametrize(
+    "entry", ["preset/../evil", "/etc/evil", "preset/C:/evil", "preset/C:\\evil", "other/x"]
+)
+def test_safe_extract_preset_rejects_unsafe_entries(tmp_path, entry):
+    from skill_ctl.archive import safe_extract_preset
+
+    archive = tmp_path / "a.zip"
+    _zip_with(archive, {entry: "x"})
+    destination = tmp_path / "out"
+    try:
+        safe_extract_preset(archive, destination)
+    except ValueError:
+        pass
+    escaped = [
+        p
+        for p in tmp_path.rglob("*")
+        if p.is_file() and p != archive and destination not in p.parents
+    ]
+    assert escaped == []
+
+
+def test_safe_extract_preset_enforces_limits(tmp_path, monkeypatch):
+    from skill_ctl import archive as archive_mod
+
+    archive = tmp_path / "a.zip"
+    _zip_with(archive, {"preset/a": "1", "preset/b": "2"})
+    monkeypatch.setattr(archive_mod, "MAX_ARCHIVE_FILES", 2)
+    with pytest.raises(ValueError, match="too many"):
+        archive_mod.safe_extract_preset(archive, tmp_path / "o1")
+    monkeypatch.setattr(archive_mod, "MAX_ARCHIVE_FILES", 100)
+    monkeypatch.setattr(archive_mod, "MAX_ARCHIVE_BYTES", 10)
+    _zip_with(archive, {"preset/big": "x" * 1000})
+    with pytest.raises(ValueError, match="expands beyond"):
+        archive_mod.safe_extract_preset(archive, tmp_path / "o2")
+
+
 def test_cli_lazy_exports_complete():
     from skill_ctl import cli
 
