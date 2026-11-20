@@ -64,9 +64,6 @@ def add(
     copy: Annotated[
         bool, typer.Option("--copy", "-c", help="Copy files instead of symlinking.")
     ] = False,
-    force: Annotated[
-        bool, typer.Option("--force", "-f", help="Force overwrite existing skill directories.")
-    ] = False,
     all_skills: Annotated[
         bool, typer.Option("--all", help="Shorthand for --skill '*' --agent '*' -y.")
     ] = False,
@@ -209,11 +206,6 @@ def add(
     else:
         if global_install:
             npx_args.append("-g")
-            # If running non-interactively with -y and no agent was specified,
-            # use detected agents to prevent npx skills from crashing on PromptScript.
-            if yes and not agent and not config.get("default_agents"):
-                for a in get_detected_global_agents():
-                    npx_args.extend(["--agent", a])
             target_cwd = Path.cwd()
         else:
             target_path = Path(project).expanduser().resolve() if project else Path.cwd()
@@ -397,7 +389,11 @@ def remove(
                 return
             if not confirmed:
                 return
-        code = run_npx_skills(["remove", *names, "-y"], cwd=str(p))
+        rm_args = ["remove", *names]
+        if agent:
+            rm_args.extend(["--agent", agent])
+        rm_args.append("-y")
+        code = run_npx_skills(rm_args, cwd=str(p))
         if code == 0:
             maybe_auto_push(f"remove {', '.join(names)} from {preset}")
         else:
@@ -598,7 +594,7 @@ def update(
             workers = min(len(updateable), max(1, concurrency))
             print_header(f"Updating {len(updateable)} presets concurrently ({workers} workers)")
 
-            def update_one(p: Path) -> tuple[str, int, list[str], str]:
+            def update_one(p: Path) -> tuple[Path, str, int, list[str], str]:
                 res = _run_update_in_dir(
                     args,
                     p,
@@ -611,15 +607,18 @@ def update(
                 code = res[0]
                 deleted = res[1]
                 out = res[2] if len(res) > 2 else ""
-                return p.name, code, deleted, out
+                return p, p.name, code, deleted, out
 
+            deleted_by_preset: list[tuple[Path, str, list[str], str]] = []
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(update_one, path): path for path in updateable}
                 completed = 0
                 total = len(updateable)
                 for fut in as_completed(futures):
                     completed += 1
-                    p_name, code, _, out = fut.result()
+                    p, p_name, code, deleted, out = fut.result()
+                    if deleted:
+                        deleted_by_preset.append((p, p_name, deleted, out))
                     if code != 0:
                         failed.append(p_name)
                         print_error(f"[{completed}/{total}] Preset '{p_name}' failed to update.")
@@ -628,6 +627,18 @@ def update(
                                 print_warn(f"    {err_line}")
                     else:
                         print_success(f"[{completed}/{total}] Preset '{p_name}' updated.")
+
+            if deleted_by_preset and not prune and not keep_deleted:
+                for p, p_name, deleted, out in sorted(deleted_by_preset, key=lambda x: x[1]):
+                    if not yes and sys.stdin.isatty():
+                        print_header(f"Upstream deletions in preset '{p_name}'")
+                        handle_upstream_deletions(
+                            p, out, prune=False, keep_deleted=False, interactive=True
+                        )
+                    else:
+                        print_warn(
+                            f"Preset '{p_name}' has upstream-deleted skill(s): {', '.join(deleted)} (pass --prune or --keep-deleted)"
+                        )
 
         if len(failed) != len(updateable):
             maybe_auto_push("update all presets")

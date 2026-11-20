@@ -143,7 +143,7 @@ DEFAULT_CONFIG_YAML += "".join(LATER_SECTIONS.values())
 
 def invalidate_config_cache() -> None:
     """Clear the cached config.yaml parse tree."""
-    read_config_file.cache_clear()
+    _read_raw_config.cache_clear()
 
 
 def ensure_config() -> Path:
@@ -157,13 +157,15 @@ def ensure_config() -> Path:
         CONFIG_FILE.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
         invalidate_config_cache()
         return CONFIG_FILE
-    append_later_sections(read_config_file())
+    data = _read_raw_config()
+    if data is not None:
+        append_later_sections(data)
     return CONFIG_FILE
 
 
 @functools.lru_cache(maxsize=1)
-def read_config_file() -> dict:
-    """The parsed config.yaml, or {} when it is absent or unreadable."""
+def _read_raw_config() -> Optional[dict]:
+    """The parsed config.yaml, {} when absent/empty, or None when invalid/unreadable."""
     if not CONFIG_FILE.exists():
         return {}
     try:
@@ -173,8 +175,22 @@ def read_config_file() -> dict:
             data = yaml.safe_load(f)
     except Exception as e:
         warnings.warn(f"Could not parse {CONFIG_FILE}: {e}", RuntimeWarning)
+        return None
+    if data is None:
         return {}
+    if not isinstance(data, dict):
+        warnings.warn(f"Could not parse {CONFIG_FILE}: expected a YAML mapping.", RuntimeWarning)
+        return None
+    return data
+
+
+def read_config_file() -> dict:
+    """The parsed config.yaml, or {} when it is absent or unreadable."""
+    data = _read_raw_config()
     return data if isinstance(data, dict) else {}
+
+
+read_config_file.cache_clear = _read_raw_config.cache_clear
 
 
 def append_later_sections(data: dict) -> None:

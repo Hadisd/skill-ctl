@@ -11,7 +11,7 @@ from skill_ctl.config import load_config
 from skill_ctl.constants import ALL_PRESETS, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.registry import load_applied
 from skill_ctl.skillscan import get_preset_skills
-from skill_ctl.theme import THEMES, fzf_color_arg, is_valid_theme, resolve_theme_name
+from skill_ctl.theme import THEMES, canonical_theme_name, fzf_color_arg, is_valid_theme
 from skill_ctl.ui import console, print_error, print_warn
 
 ALL_SKILLS = "0"
@@ -374,7 +374,7 @@ def prompt_theme(names: list[str], current: str) -> str:
         if picked.isdigit() and 1 <= int(picked) <= len(names):
             return names[int(picked) - 1]
         if is_valid_theme(picked):
-            return resolve_theme_name(picked)
+            return canonical_theme_name(picked)
         print_warn(f"Pick a number from 1 to {len(names)}, or a name.")
 
 

@@ -39,11 +39,14 @@ def get_preset_skills(preset_dir: Path) -> dict[str, Path]:
         skills.setdefault(entry.name, Path(entry.path))
 
     # 3. Check direct subdirectories with SKILL.md
-    with os.scandir(preset_dir) as entries:
-        for entry in entries:
-            if entry.name.startswith(".") or not entry.is_dir():
-                continue
-            if os.path.exists(os.path.join(entry.path, "SKILL.md")):
-                skills.setdefault(entry.name, Path(entry.path))
+    try:
+        with os.scandir(preset_dir) as entries:
+            for entry in entries:
+                if entry.name.startswith(".") or not entry.is_dir():
+                    continue
+                if os.path.exists(os.path.join(entry.path, "SKILL.md")):
+                    skills.setdefault(entry.name, Path(entry.path))
+    except (FileNotFoundError, NotADirectoryError):
+        return skills
 
     return skills

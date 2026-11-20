@@ -9,9 +9,11 @@ os.environ["COLUMNS"] = "200"
 @pytest.fixture(autouse=True)
 def _isolated_catalog_cache(tmp_path, monkeypatch):
     """Keep tests that mock the registries from writing into the real ~/.skill-ctl/cache."""
-    from skill_ctl import catalog
+    from skill_ctl import catalog, registry
 
     cache_root = tmp_path / "catalog-cache"
+    monkeypatch.setattr(catalog, "CACHE_DIR", cache_root)
     monkeypatch.setattr(catalog, "QUERY_CACHE_DIR", cache_root / "queries")
     monkeypatch.setattr(catalog, "REPO_CACHE_DIR", cache_root / "repos")
     monkeypatch.setattr(catalog, "SKILL_CACHE_DIR", cache_root / "skills")
+    monkeypatch.setattr(registry, "APPLIED_FILE", tmp_path / "applied.json")

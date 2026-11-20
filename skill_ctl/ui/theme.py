@@ -146,10 +146,8 @@ def theme_names() -> list[str]:
     return list(THEMES)
 
 
-def resolve_theme_name(name: Optional[str]) -> str:
-    """The theme to actually use: NO_COLOR wins, then aliases and case normalization."""
-    if os.environ.get("NO_COLOR"):
-        return "mono"
+def canonical_theme_name(name: Optional[str]) -> str:
+    """Normalize aliases and casing for a theme name without checking NO_COLOR."""
     if not name:
         return DEFAULT_THEME
     cleaned = name.strip().lower().replace("_", "-")
@@ -165,6 +163,13 @@ def resolve_theme_name(name: Optional[str]) -> str:
         if alias_key.replace("-", "") == no_dash:
             return target
     return DEFAULT_THEME
+
+
+def resolve_theme_name(name: Optional[str]) -> str:
+    """The theme to actually use: NO_COLOR wins, then aliases and case normalization."""
+    if os.environ.get("NO_COLOR"):
+        return "mono"
+    return canonical_theme_name(name)
 
 
 def is_valid_theme(name: Optional[str]) -> bool:

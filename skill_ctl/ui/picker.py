@@ -8,7 +8,6 @@ without the two modules importing each other.
 import atexit
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -51,7 +50,7 @@ def truncate(value: object, width: int) -> str:
 def preview_markdown_command(field_placeholder: str = "{5}") -> str:
     """Render markdown preview using bat or glow when available, falling back to cat/type."""
     width = '"%FZF_PREVIEW_COLUMNS%"' if os.name == "nt" else '"$FZF_PREVIEW_COLUMNS"'
-    theme = shlex.quote(bat_theme(load_config().get("theme")))
+    theme = shell_quote(bat_theme(load_config().get("theme")))
     bat_options = (
         f"--color=always --paging=never --style=plain --language=md --theme={theme} "
         f"--squeeze-blank --wrap=character --terminal-width={width}"

@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 import shutil
+import stat
+import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,14 +34,18 @@ def export_preset(source: Path, name: str, destination: Path, skills: list[str])
         "skills": sorted(skills),
         "source_metadata": source_metadata,
     }
+    source_root = source.resolve()
     with zipfile.ZipFile(destination, "x", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         for path in sorted(source.rglob("*")):
             if path.is_symlink():
                 try:
-                    if not path.resolve().is_relative_to(source.resolve()):
-                        continue
-                except (OSError, ValueError):
+                    resolved = path.resolve()
+                except (OSError, RuntimeError, ValueError):
+                    continue
+                if not resolved.is_relative_to(source_root):
+                    continue
+                if path.is_dir():
                     continue
             archive_name = Path("preset") / path.relative_to(source)
             if path.is_dir():
@@ -53,8 +59,18 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
     try:
         with zipfile.ZipFile(archive_path) as archive:
             try:
-                manifest = json.loads(archive.read("manifest.json"))
-            except (KeyError, ValueError) as error:
+                manifest_info = archive.getinfo("manifest.json")
+            except KeyError as error:
+                raise ValueError("missing or invalid manifest.json") from error
+            if manifest_info.file_size > MAX_ARCHIVE_BYTES:
+                raise ValueError(f"archive expands beyond {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB")
+            with archive.open(manifest_info) as mf:
+                raw_manifest = mf.read(MAX_ARCHIVE_BYTES + 1)
+            if len(raw_manifest) > MAX_ARCHIVE_BYTES:
+                raise ValueError(f"archive expands beyond {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB")
+            try:
+                manifest = json.loads(raw_manifest)
+            except ValueError as error:
                 raise ValueError("missing or invalid manifest.json") from error
             if manifest.get("format") != ARCHIVE_FORMAT or not isinstance(
                 manifest.get("preset"), str
@@ -67,6 +83,7 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 raise ValueError(f"archive expands beyond {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB")
             destination.mkdir(parents=True, exist_ok=True)
             root = destination.resolve()
+            extracted_bytes = 0
             for member in members:
                 member_path = Path(member.filename)
                 if member_path.is_absolute() or ".." in member_path.parts:
@@ -84,10 +101,62 @@ def safe_extract_preset(archive_path: Path, destination: Path) -> dict:
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with archive.open(member) as source, target.open("wb") as output:
-                        shutil.copyfileobj(source, output)
+                        while True:
+                            chunk = source.read(65536)
+                            if not chunk:
+                                break
+                            extracted_bytes += len(chunk)
+                            if extracted_bytes > MAX_ARCHIVE_BYTES:
+                                raise ValueError(
+                                    f"archive expands beyond {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB"
+                                )
+                            output.write(chunk)
     except (OSError, zipfile.BadZipFile) as error:
         raise ValueError(f"could not read archive: {error}") from error
     return manifest
+
+
+def _remove_tree(path: Path) -> None:
+    """Best-effort removal of a staged backup directory or symlink across platforms."""
+    try:
+        if path.is_symlink() or not path.is_dir():
+            path.unlink(missing_ok=True)
+            return
+
+        def _chmod_and_retry(func, failed_path, _exc):
+            os.chmod(failed_path, stat.S_IWRITE | stat.S_IREAD)
+            func(failed_path)
+
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(path, onexc=_chmod_and_retry)
+        else:
+            shutil.rmtree(path, onerror=_chmod_and_retry)
+    except OSError:
+        pass
+
+
+def replace_directory_atomically(staged: Path, target: Path) -> None:
+    """Replace *target* with *staged* (same filesystem), restoring on error."""
+    backup: Optional[Path] = None
+    if target.exists() or target.is_symlink():
+        backup = staged.parent / ".skctl-backup"
+        counter = 0
+        while backup.exists() or backup.is_symlink():
+            counter += 1
+            backup = staged.parent / f".skctl-backup-{counter}"
+        target.rename(backup)
+    try:
+        staged.rename(target)
+    except OSError:
+        if (
+            backup is not None
+            and (backup.exists() or backup.is_symlink())
+            and not (target.exists() or target.is_symlink())
+        ):
+            backup.rename(target)
+        raise
+    if backup is not None and (backup.exists() or backup.is_symlink()):
+        _remove_tree(backup)
 
 
 def file_digest(path: Path) -> str:

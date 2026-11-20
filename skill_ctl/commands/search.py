@@ -19,6 +19,7 @@ from skill_ctl.presets import (
     get_global_skills,
     get_preset_skills,
     preset_path,
+    remove_skills_from_preset,
 )
 from skill_ctl.presets import (
     apply as apply_preset,
@@ -472,7 +473,22 @@ def search(
             return
 
         deleted_count = 0
+        presets_affected: set[str] = set()
+        by_preset_del: dict[str, list[str]] = {}
+        other_rows: list[dict] = []
         for row in chosen:
+            if row.get("scope") == "preset" and row.get("preset"):
+                by_preset_del.setdefault(row["preset"], []).append(row["skill"])
+            else:
+                other_rows.append(row)
+
+        for p_name, skill_names in by_preset_del.items():
+            removed = remove_skills_from_preset(preset_path(p_name), skill_names)
+            if removed:
+                deleted_count += len(removed)
+                presets_affected.add(p_name)
+
+        for row in other_rows:
             path = Path(row["path"])
             if path.is_symlink():
                 try:
@@ -495,38 +511,32 @@ def search(
 
         if deleted_count:
             print_success(f"Deleted {deleted_count} skill{'s' if deleted_count != 1 else ''}.")
-            presets_affected = {
-                r.get("preset") for r in chosen if r.get("scope") == "preset" and r.get("preset")
-            }
-            for p_name in presets_affected:
-                maybe_auto_push(f"delete skills from {p_name}")
+        if presets_affected:
+            maybe_auto_push(f"delete skills from {', '.join(sorted(presets_affected))}")
         return
 
-    if action == "alt-p" or (preset and action != "alt-g"):
-        target_preset = preset
-        if not target_preset:
-            from skill_ctl.constants import PRESETS_DIR
-            from skill_ctl.prompts import prompt_preset_or_new
-
-            names = (
-                sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir())
-                if PRESETS_DIR.is_dir()
-                else []
-            )
-            config = load_config()
-            default_p = config.get("default_preset", "default")
-            target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR)
-            if not target_preset:
-                print_warn("No preset selected; cancelled.")
-                return
-
+    if action == "alt-p":
+        from skill_ctl.constants import PRESETS_DIR
         from skill_ctl.presets import install_skills_into_preset
+        from skill_ctl.prompts import prompt_preset_or_new
+
+        names = (
+            sorted(p.name for p in PRESETS_DIR.iterdir() if p.is_dir())
+            if PRESETS_DIR.is_dir()
+            else []
+        )
+        config = load_config()
+        default_p = config.get("default_preset", "default")
+        target_preset = prompt_preset_or_new(names, default_p, PRESETS_DIR)
+        if not target_preset:
+            print_warn("No preset selected; cancelled.")
+            return
 
         target_dir = ensure_preset_dir(target_preset)
         added = install_skills_into_preset(target_preset, target_dir, chosen)
         if added:
             maybe_auto_push(f"add {', '.join(r['skill'] for r in chosen)} to {target_preset}")
-    elif action == "alt-g" or global_only:
+    elif action == "alt-g":
         add_installed_to_global(load_config(), skill=",".join(r["skill"] for r in chosen))
     elif action == "alt-a":
         from skill_ctl.constants import PRESETS_DIR

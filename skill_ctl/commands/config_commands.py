@@ -18,7 +18,7 @@ from skill_ctl.config import (
     load_config,
 )
 from skill_ctl.prompts import prompt_theme
-from skill_ctl.theme import THEMES, is_valid_theme, resolve_theme_name
+from skill_ctl.theme import THEMES, canonical_theme_name, is_valid_theme
 from skill_ctl.ui import console, print_success, print_warn, set_theme
 
 
@@ -103,7 +103,7 @@ def theme_cmd(
         print_warn(f"Unknown theme '{name}'. Available: {', '.join(THEMES)}")
         raise SystemExit(1)
     else:
-        name = resolve_theme_name(name)
+        name = canonical_theme_name(name)
 
     set_theme_in_config(name)
     set_theme(name)

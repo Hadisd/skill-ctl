@@ -27,8 +27,14 @@ LIST_LIMIT = 25
 # a preset of a few hundred skills would otherwise be the whole screen.
 TABLE_LIMIT = 8
 
+from skill_ctl.archive import replace_directory_atomically
 from skill_ctl.backup import maybe_auto_push
-from skill_ctl.config import get_agent_dir_map, global_skill_dirs, load_config
+from skill_ctl.config import (
+    get_agent_dir_map,
+    global_skill_dirs,
+    invalidate_config_cache,
+    load_config,
+)
 from skill_ctl.constants import (
     ALL_PRESETS,
     CONFIG_FILE,
@@ -205,10 +211,12 @@ def clone_preset(
     if dry_run:
         console.print(f"Would {verb} preset '{destination_name}' by cloning '{source_name}'.")
         return
-    if destination.exists():
-        shutil.rmtree(destination)
-    shutil.copytree(source, destination)
-    _write_history(destination, "clone", [source_name], get_preset_skills(destination))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".skctl-clone-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / destination.name
+        shutil.copytree(source, staged)
+        _write_history(staged, "clone", [source_name], get_preset_skills(staged))
+        replace_directory_atomically(staged, destination)
     print_success(f"Cloned preset '{source_name}' to '{destination_name}'")
     maybe_auto_push(f"clone preset {source_name} to {destination_name}")
     offer_add_after_create(destination_name, destination, load_config())
@@ -266,12 +274,14 @@ def combine_presets(
             console.print(f"  keep {skill_name} from {kept}; skip duplicate from {skipped}")
         return
 
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.mkdir(parents=True)
-    for skill_name, (_, skill_path) in skills.items():
-        shutil.copytree(skill_path, destination / skill_name)
-    _write_history(destination, "combine", source_names, skills)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".skctl-combine-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / destination.name
+        staged.mkdir()
+        for skill_name, (_, skill_path) in skills.items():
+            shutil.copytree(skill_path, staged / skill_name)
+        _write_history(staged, "combine", source_names, skills)
+        replace_directory_atomically(staged, destination)
     print_success(f"Combined {len(skills)} skills into preset '{destination_name}'")
     if duplicates:
         print_warn(f"Kept the first selected version of {len(duplicates)} duplicate skill(s).")
@@ -502,6 +512,21 @@ def apply(
                 else presets_for(target_project)
             )
 
+    if all_presets and preset is None:
+        apply_across_presets(
+            target_project,
+            config,
+            agent,
+            use_copy,
+            force,
+            explicit_pick=pick_skills or skill == SELECT_INTERACTIVELY,
+            dry_run=dry_run,
+            skill=None if skill == SELECT_INTERACTIVELY else skill,
+            global_apply=is_global,
+            yes=yes,
+        )
+        return
+
     applied_entire_preset = False
     # Which preset is always ours to ask; npx has no concept of them.
     if preset is None and interactive:
@@ -550,8 +575,13 @@ def apply(
             # What this project already uses is the likeliest answer, so offer it first.
             if len(recorded) == 1:
                 target_preset = next(iter(recorded))
-            if len(available) > 1:
-                target_preset = prompt_preset(available, target_project, PRESETS_DIR)
+            if len(available) == 1:
+                target_preset = available[0]
+            elif len(available) > 1:
+                default_choice = target_preset if target_preset in available else None
+                target_preset = prompt_preset(
+                    available, target_project, PRESETS_DIR, default_name=default_choice
+                )
 
     # "All of them", from the preset prompt or --all-presets: the question becomes
     # which skills, across every preset at once, and each preset's share is applied
@@ -563,8 +593,9 @@ def apply(
             agent,
             use_copy,
             force,
-            pick_skills,
-            dry_run,
+            explicit_pick=pick_skills or skill == SELECT_INTERACTIVELY,
+            dry_run=dry_run,
+            skill=None if skill == SELECT_INTERACTIVELY else skill,
             global_apply=is_global,
             yes=yes,
         )
@@ -1089,8 +1120,7 @@ def edit_preset(
         elif choice == "2":
             from skill_ctl.search import search
 
-            search(preset=name)
-            maybe_auto_push(f"edit preset {name}: search add skills")
+            search(preset=name, remote_only=True)
         elif choice == "3":
             if not skill_names:
                 print_warn(f"Preset '{name}' has no skills to remove.")
@@ -1294,6 +1324,26 @@ def add_installed_to_global(
     verb = "Copied" if result.copied else "Linked"
     dest_labels = [f"~/{d}" for d in dest_rel_dirs]
     if result.applied:
+        by_preset: dict[str, list[str]] = {}
+        for name in result.applied:
+            src_row = seen.get(name, {})
+            src_preset = src_row.get("preset")
+            if src_preset and src_row.get("scope", "preset") != "global":
+                by_preset.setdefault(src_preset, []).append(name)
+        mode = "copy" if result.copied else "symlink"
+        for preset_name, preset_skills in by_preset.items():
+            skill_set = set(preset_skills)
+            preset_placed = {p for p in result.placed if Path(p).name in skill_set}
+            preset_copies = {p for p in result.copies if Path(p).name in skill_set}
+            record_apply(
+                target_project,
+                preset_name,
+                preset_skills,
+                dest_rel_dirs,
+                mode,
+                placed=preset_placed,
+                copies=preset_copies,
+            )
         print_success(
             f"{verb} {len(result.applied)} skill{'s' if len(result.applied) != 1 else ''} into {', '.join(dest_labels)}"
         )
@@ -1321,7 +1371,7 @@ def offer_add_after_create(name: str, preset_dir: Path, config: dict) -> None:
     elif choice == "2":
         from skill_ctl.search import search
 
-        search(preset=name)
+        search(preset=name, remote_only=True)
 
 
 def choose_skills(
@@ -1676,6 +1726,33 @@ def unapply_one(
     left_behind = set()
     per_skill = len(names) <= LIST_LIMIT
 
+    recorded_placements = set(entry["placements"]) if "placements" in entry else None
+    recorded_targets = set(entry.get("targets", []))
+
+    def _is_recorded_here(rel_dir: str, skill_name: str) -> bool:
+        if recorded_placements is not None:
+            return f"{rel_dir}/{skill_name}" in recorded_placements
+        if entry:
+            return skill_name in recorded_names and (
+                not recorded_targets or rel_dir in recorded_targets
+            )
+        return False
+
+    def _is_ours_link(path: Path, skill_name: str) -> bool:
+        source = skills.get(skill_name)
+        return links_into_preset(path, preset_dir) or (
+            source is not None and path.is_symlink() and path.resolve() == source.resolve()
+        )
+
+    def _links_into_other_preset(path: Path, skill_name: str) -> bool:
+        return (
+            path.is_symlink()
+            and not _is_ours_link(path, skill_name)
+            and PRESETS_DIR.is_dir()
+            and links_into_preset(path, PRESETS_DIR)
+        )
+
+    project_root = target_project.resolve()
     from rich.progress import track
 
     for skill_name in track(
@@ -1687,8 +1764,8 @@ def unapply_one(
     ):
         gone = []
         for rel_dir in target_dirs:
-            norm_target = Path(os.path.normpath(os.path.join(target_project, rel_dir, skill_name)))
-            if not norm_target.is_relative_to(target_project.resolve()):
+            norm_target = Path(os.path.normpath(os.path.join(project_root, rel_dir, skill_name)))
+            if not norm_target.is_relative_to(project_root):
                 print_warn(f"Skipping {rel_dir}/{skill_name}: escapes project boundary.")
                 continue
             target = target_project / rel_dir / skill_name
@@ -1698,23 +1775,38 @@ def unapply_one(
             # Only delete what this preset put here. A same-named skill installed
             # directly, or linked from another preset, is not ours to remove.
             # The second test catches links written by older versions, which
-            # pointed at whatever the preset's own skill resolved to. The third
+            # pointed at whatever the preset's own skill resolved to.
             # A copy is not a link and so never counts as ours: --force removes
             # those, as it always has, and naming them from the record is what
             # lets it reach a copy of a skill the preset no longer holds.
-            source = skills.get(skill_name)
-            ours = links_into_preset(target, preset_dir) or (
-                source is not None and target.is_symlink() and target.resolve() == source.resolve()
-            )
-            if not (ours or force):
-                why = (
-                    f"a copy from '{target_preset}'"
-                    if copied and skill_name in recorded_names
-                    else f"not a link into '{target_preset}'"
-                )
-                print_warn(f"Skipping {rel_dir}/{skill_name} ({why}; use --force)")
+            ours = _is_ours_link(target, skill_name)
+            other_preset_link = _links_into_other_preset(target, skill_name)
+            recorded_here = _is_recorded_here(rel_dir, skill_name)
+            if other_preset_link:
+                print_warn(f"Skipping {rel_dir}/{skill_name} (linked to another preset)")
                 skipped += 1
-                left_behind.add(skill_name)
+                continue
+
+            can_force_delete = force and (recorded_here or not entry)
+            if not (ours or can_force_delete):
+                if recorded_here:
+                    why = (
+                        f"a copy from '{target_preset}'"
+                        if (copied or f"{rel_dir}/{skill_name}" in entry.get("copies", []))
+                        and skill_name in recorded_names
+                        else f"not a link into '{target_preset}'"
+                    )
+                    print_warn(f"Skipping {rel_dir}/{skill_name} ({why}; use --force)")
+                    skipped += 1
+                    left_behind.add(skill_name)
+                else:
+                    why = (
+                        f"not placed by '{target_preset}'"
+                        if force
+                        else f"not a link into '{target_preset}'"
+                    )
+                    print_warn(f"Skipping {rel_dir}/{skill_name} ({why})")
+                    skipped += 1
                 continue
 
             if target.is_dir() and not target.is_symlink():
@@ -1735,15 +1827,20 @@ def unapply_one(
         if pruned:
             print_success(f"Removed empty {pruned.relative_to(target_project)}/")
 
-    remaining_paths = {
-        f"{directory}/{name}"
-        for directory in remaining_dirs
-        for name in all_names
-        if (target_project / directory / name).exists()
-        or (target_project / directory / name).is_symlink()
-    }
+    remaining_paths: set[str] = set()
+    still_present_on_disk: set[str] = set()
+    for directory in remaining_dirs:
+        for name in all_names:
+            candidate = target_project / directory / name
+            if not (candidate.exists() or candidate.is_symlink()):
+                continue
+            still_present_on_disk.add(name)
+            if _links_into_other_preset(candidate, name):
+                continue
+            if _is_ours_link(candidate, name) or _is_recorded_here(directory, name):
+                remaining_paths.add(f"{directory}/{name}")
     left_behind.update(Path(path).name for path in remaining_paths)
-    unlocked = prune_lockfile(target_project, removed_names - left_behind)
+    unlocked = prune_lockfile(target_project, removed_names - still_present_on_disk)
     if unlocked:
         print_success(f"Dropped {unlocked} entries from skills-lock.json")
 
@@ -2194,6 +2291,7 @@ def presets(
             )
             if updated != text:
                 CONFIG_FILE.write_text(updated, encoding="utf-8")
+                invalidate_config_cache()
         print_success(f"Renamed preset '{name}' to '{new_name}'")
         maybe_auto_push(f"rename preset {name} to {new_name}")
 

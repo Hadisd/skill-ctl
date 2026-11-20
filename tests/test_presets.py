@@ -1484,9 +1484,12 @@ def test_update_prune_and_keep_deleted_mutually_exclusive():
 
 def test_add_installed_to_global(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+    from skill_ctl import registry
 
+    applied_file = env["home"] / ".skill-ctl" / "applied.json"
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(Path, "home", lambda: env["home"])
+    monkeypatch.setattr(registry, "APPLIED_FILE", applied_file)
 
     config = {
         "apply_targets": [".agents/skills"],
@@ -1499,13 +1502,17 @@ def test_add_installed_to_global(env, monkeypatch):
     global_tdd = env["home"] / ".agents" / "skills" / "tdd"
     assert global_tdd.is_symlink()
     assert (global_tdd / "SKILL.md").exists()
+    assert str(env["home"]) in json.loads(applied_file.read_text(encoding="utf-8"))["projects"]
 
 
 def test_add_installed_to_global_copy(env, monkeypatch):
     from skill_ctl import presets as presets_mod
+    from skill_ctl import registry
 
+    applied_file = env["home"] / ".skill-ctl" / "applied.json"
     monkeypatch.setattr(presets_mod, "PRESETS_DIR", env["presets"])
     monkeypatch.setattr(Path, "home", lambda: env["home"])
+    monkeypatch.setattr(registry, "APPLIED_FILE", applied_file)
 
     config = {
         "apply_targets": [".agents/skills"],
@@ -1518,6 +1525,8 @@ def test_add_installed_to_global_copy(env, monkeypatch):
     global_review = env["home"] / ".agents" / "skills" / "review"
     assert global_review.is_dir() and not global_review.is_symlink()
     assert (global_review / "SKILL.md").exists()
+    recorded = json.loads(applied_file.read_text(encoding="utf-8"))["projects"][str(env["home"])]
+    assert recorded["mypreset"]["mode"] == "copy"
 
 
 def test_add_without_package_to_project_searches_remote(env, monkeypatch):

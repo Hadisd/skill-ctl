@@ -67,6 +67,8 @@ def doctor(
 
     total_broken = 0
     gone = []
+    updated_applied: dict[str, dict] = {}
+    removed_applied: set[str] = set()
 
     for target in projects:
         target_label = "~ (global)" if target == Path.home() else str(target)
@@ -91,7 +93,10 @@ def doctor(
         # copies are real directories, which only `unapply --force` should remove,
         # so the record of them has to stay until it does.
         stranded_copies = [
-            name for name in missing_presets if (recorded.get(name) or {}).get("mode") == "copy"
+            name
+            for name in missing_presets
+            if (recorded.get(name) or {}).get("mode") == "copy"
+            or bool((recorded.get(name) or {}).get("copies"))
         ]
         for name in missing_presets:
             if name in stranded_copies:
@@ -117,15 +122,17 @@ def doctor(
                     recorded.pop(name, None)
             write_project_file(target, recorded)
             if recorded:
-                applied[str(target)] = recorded
+                updated_applied[str(target)] = recorded
             else:
-                applied.pop(str(target), None)
+                removed_applied.add(str(target))
 
-    if fix:
-        for path in gone:
-            applied.pop(path, None)
-        applied = {path: presets for path, presets in applied.items() if presets}
-        save_applied(applied)
+    if fix and (updated_applied or removed_applied or gone):
+        fresh_applied = load_applied()
+        fresh_applied.update(updated_applied)
+        for path in removed_applied | set(gone):
+            fresh_applied.pop(path, None)
+        fresh_applied = {path: presets for path, presets in fresh_applied.items() if presets}
+        save_applied(fresh_applied)
 
     if total_broken:
         if fix:

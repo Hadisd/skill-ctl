@@ -40,6 +40,7 @@ SKILL_CACHE_DIR = CACHE_DIR / "skills"
 QUERY_CACHE_TTL = 3600 * 6  # 6 hours
 REPO_CACHE_TTL = 86400 * 7  # 7 days
 SKILL_CACHE_TTL = 86400 * 7  # 7 days
+CACHE_PRUNE_INTERVAL = 86400  # 24 hours
 
 
 def _read_disk_cache(path: Path, ttl: Optional[float] = None) -> Optional[Any]:
@@ -62,6 +63,11 @@ def _write_disk_cache(path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data), encoding="utf-8")
     except OSError:
+        return
+    try:
+        if path.is_relative_to(CACHE_DIR):
+            prune_cache()
+    except Exception:
         pass
 
 
@@ -1202,6 +1208,13 @@ def prune_cache(
     if not CACHE_DIR.exists():
         return
     now = time.time()
+    marker = CACHE_DIR / ".last_pruned"
+    if not force:
+        try:
+            if marker.exists() and now - marker.stat().st_mtime < CACHE_PRUNE_INTERVAL:
+                return
+        except OSError:
+            pass
     files = []
     total_size = 0
     for p in CACHE_DIR.rglob("*.json"):
@@ -1228,6 +1241,10 @@ def prune_cache(
                 total_size -= size
             except OSError:
                 pass
+    try:
+        marker.write_text("", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def clear_cache() -> int:

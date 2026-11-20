@@ -99,15 +99,21 @@ def rename_preset_directory(old_dir: Path, new_dir: Path, projects: dict[Path, l
         replaced = []
         try:
             for link, updated, backup in replacements:
-                replaced.append((link, backup))
                 if sys.platform == "win32" and (link.is_symlink() or link.exists()):
                     link.unlink()
-                updated.replace(link)
+                    replaced.append((link, backup))
+                    updated.replace(link)
+                else:
+                    updated.replace(link)
+                    replaced.append((link, backup))
         except OSError:
             for link, backup in reversed(replaced):
-                if sys.platform == "win32" and (link.is_symlink() or link.exists()):
-                    link.unlink()
-                backup.replace(link)
+                try:
+                    if sys.platform == "win32" and (link.is_symlink() or link.exists()):
+                        link.unlink()
+                    backup.replace(link)
+                except OSError:
+                    pass
             new_dir.rename(old_dir)
             raise
 
@@ -197,11 +203,12 @@ def apply_skills(
     placed: set[str] = set()
     copies: set[str] = set()
     copied = copy
+    project_root = project.resolve()
     for name, source in sorted(skills.items()):
         installed = False
         for relative_dir in target_dirs:
-            norm_dest = Path(os.path.normpath(os.path.join(project, relative_dir, name)))
-            if not norm_dest.is_relative_to(project.resolve()):
+            norm_dest = Path(os.path.normpath(os.path.join(project_root, relative_dir, name)))
+            if not norm_dest.is_relative_to(project_root):
                 kept.append(f"{relative_dir}/{name}")
                 continue
             destination = project / relative_dir / name

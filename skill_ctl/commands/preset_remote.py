@@ -13,6 +13,7 @@ from skill_ctl.archive import (
     preset_changes,
     preset_files,
     preset_symlinks,
+    replace_directory_atomically,
     safe_extract_preset,
 )
 from skill_ctl.archive import export_preset as write_archive
@@ -89,9 +90,13 @@ def preset_import(
         if target.exists() and not replace:
             print_error(f"Preset '{target_name}' already exists. Use --replace or --rename <name>.")
             sys.exit(1)
-        if target.exists():
-            shutil.rmtree(target)
-        copy_preset(extracted, target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".skctl-import-", dir=target.parent
+        ) as staging_root:
+            staged = Path(staging_root) / target.name
+            copy_preset(extracted, staged)
+            replace_directory_atomically(staged, target)
     print_success(f"Imported preset '{target_name}' from {archive_path}")
     maybe_auto_push(f"import preset {target_name}")
 
@@ -247,10 +252,15 @@ def import_github_presets(
                 return
             print_warn("No preset selected. Pass --preset NAME when fzf is unavailable.")
             return
+        if rename and len(selected) > 1:
+            print_error("--rename can only be used with one preset.")
+            sys.exit(1)
         missing = [name for name in selected if name not in available_by_name]
         if missing:
             print_error(f"Preset not found in {repository}: {', '.join(missing)}")
             sys.exit(1)
+        imported_names: list[str] = []
+        skipped_existing = False
         for source_name in selected:
             target_name = rename or source_name
             target = _preset_path(target_name)
@@ -273,9 +283,19 @@ def import_github_presets(
                 print_error(
                     f"Preset '{target_name}' already exists. Use --replace or --rename <name>."
                 )
+                skipped_existing = True
                 continue
-            if target.exists():
-                shutil.rmtree(target)
-            copy_preset(source, target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(
+                prefix=".skctl-import-", dir=target.parent
+            ) as staging_root:
+                staged = Path(staging_root) / target.name
+                copy_preset(source, staged)
+                replace_directory_atomically(staged, target)
             print_success(f"Imported preset '{target_name}' from {repository}")
-            maybe_auto_push(f"import preset {target_name}")
+            imported_names.append(target_name)
+        if imported_names:
+            label = imported_names[0] if len(imported_names) == 1 else ", ".join(imported_names)
+            maybe_auto_push(f"import preset {label}")
+        if skipped_existing:
+            sys.exit(1)

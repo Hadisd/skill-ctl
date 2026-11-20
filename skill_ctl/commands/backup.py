@@ -419,10 +419,13 @@ def restore_global_skills(
                     continue
                 dst.unlink()
             elif dst.exists():
-                if not _dirs_differ(src_path, dst):
+                if dst.is_dir() and not _dirs_differ(src_path, dst):
                     restored_names.add(name)
                     continue
-                shutil.rmtree(dst)
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
             dst.parent.mkdir(parents=True, exist_ok=True)
             _copy_skill(src_path, dst)
             restored_names.add(name)
@@ -441,9 +444,23 @@ def restore_global_skills(
                     restored_names.add(name)
                     continue
                 dst = target_dir / name
-                if not dst.exists():
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    _copy_skill(src_path, dst)
+                if dst.is_symlink():
+                    if _links_into_presets(dst, presets_dir) and not force:
+                        print_warn(
+                            f"Kept existing preset link ~/{rel_dir}/{name} (use --force to replace)"
+                        )
+                        continue
+                    dst.unlink()
+                elif dst.exists():
+                    if dst.is_dir() and not _dirs_differ(src_path, dst):
+                        restored_names.add(name)
+                        continue
+                    if dst.is_dir():
+                        shutil.rmtree(dst)
+                    else:
+                        dst.unlink()
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                _copy_skill(src_path, dst)
                 restored_names.add(name)
             continue
 
@@ -458,7 +475,10 @@ def restore_global_skills(
                     continue
                 dst.unlink()
             elif dst.exists():
-                shutil.rmtree(dst)
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
 
             canonical = agents_target_dir / name
             linked = False
@@ -566,7 +586,7 @@ def sanitize_url(url: Optional[str]) -> str:
     """Mask embedded credentials in a git URL to prevent logging secrets."""
     if not url:
         return ""
-    return re.sub(r"://([^@:]+)(:[^@]*)?@", "://***@", url)
+    return re.sub(r"://[^/]+@", "://***@", url)
 
 
 def remote_url() -> Optional[str]:
@@ -762,7 +782,7 @@ def backup_init(repo: Optional[str], public: bool, yes: bool = False) -> None:
     if repo and "/" not in repo and "://" not in repo:
         # A bare name is a repo to create, not one to point at.
         if current:
-            print_warn(f"Repointing the backup away from {current}.")
+            print_warn(f"Repointing the backup away from {sanitize_url(current)}.")
         url = create_github_repo(repo, not public)
         if not url:
             print_error("Could not create the repo (is the gh CLI installed and logged in?).")
@@ -1153,7 +1173,7 @@ def backup_status(include_global: bool = False) -> None:
         return
 
     url = remote_url()
-    print_header(f"Backup repository: {url or '(none configured)'}")
+    print_header(f"Backup repository: {sanitize_url(url) or '(none configured)'}")
     dirty = git(["status", "--short"], capture=True).stdout.strip()
     global_changes = uncommitted_global_changes() if include_global else []
     if dirty or global_changes:
