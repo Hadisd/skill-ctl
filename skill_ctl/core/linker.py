@@ -128,8 +128,11 @@ def prune_lockfile(project: Path, removed_names: set[str]) -> int:
                 break
     if not removed_names or not lock.is_file():
         return 0
-    data = json.loads(lock.read_text(encoding="utf-8"))
-    entries = data.get("skills")
+    try:
+        data = json.loads(lock.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    entries = data.get("skills") if isinstance(data, dict) else None
     if not isinstance(entries, dict):
         return 0
     stale = [name for name in entries if name in removed_names]

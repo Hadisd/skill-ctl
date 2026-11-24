@@ -1,6 +1,7 @@
 """Configuration loading and management (~/.skill-ctl/config.yaml)."""
 
 import functools
+import os
 import warnings
 from pathlib import Path
 from typing import Optional
@@ -210,9 +211,26 @@ def append_later_sections(data: dict) -> None:
         warnings.warn(f"Could not add new settings to {CONFIG_FILE}: {e}", RuntimeWarning)
 
 
-def load_config() -> dict:
-    """The effective settings. A pure read: it creates no file and no directory."""
-    config = {
+_DICT_SECTIONS = ("prompts", "backup", "npx", "custom_agents")
+_STRING_LISTS = ("apply_targets", "default_agents", "global_skill_dirs")
+_STRINGS = ("default_destination", "apply_mode", "theme")
+
+
+def valid_preset_name(name: object) -> bool:
+    """Whether *name* can be one preset directory: no separators, no dots-only, fits a filename."""
+    if not isinstance(name, str) or not name or name in (".", ".."):
+        return False
+    if "/" in name or "\\" in name or "\0" in name:
+        return False
+    try:
+        return len(os.fsencode(name)) <= 255
+    except UnicodeError:
+        return False
+
+
+def _defaults() -> dict:
+    """Fresh default settings; callers may mutate the result."""
+    return {
         "default_destination": "prompt",
         "default_preset": "default",
         "apply_targets": list(DEFAULT_TARGETS),
@@ -245,14 +263,83 @@ def load_config() -> dict:
         "search_limit": DEFAULT_SEARCH_LIMIT,
     }
 
+
+def _warn_invalid(key: str, expected: str) -> None:
+    warnings.warn(
+        f"Invalid {key} in {CONFIG_FILE}; expected {expected}. Using the default.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _sanitize(config: dict) -> None:
+    """Make every setting the type the rest of the code assumes, falling back to the default.
+
+    A hand-edited config.yaml can hold `null` (a bare `npx:`), a scalar where a
+    list belongs, or junk entries inside a list; none of that may crash a command.
+    """
+    defaults = _defaults()
+    for key in _STRINGS:
+        if not isinstance(config[key], str):
+            _warn_invalid(key, "a string")
+            config[key] = defaults[key]
+    for key in _STRING_LISTS:
+        value = config[key]
+        if value is None and key != "default_agents":
+            config[key] = list(defaults[key])
+            continue
+        if value is None:
+            config[key] = []
+            continue
+        if not isinstance(value, list):
+            _warn_invalid(key, "a list")
+            config[key] = list(defaults[key])
+            continue
+        kept = [v for v in value if isinstance(v, str) and v.strip()]
+        if value and not kept and key != "default_agents":
+            _warn_invalid(key, "a list of non-empty strings")
+            kept = list(defaults[key])
+        config[key] = kept
+    agents = config["custom_agents"]
+    config["custom_agents"] = {
+        k: v
+        for k, v in agents.items()
+        if isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip()
+    }
+    if not isinstance(config["search_remotes"], list):
+        _warn_invalid("search_remotes", "a list")
+        config["search_remotes"] = defaults["search_remotes"]
+    try:
+        relevance = float(config["search_min_relevance"])
+        if relevance != relevance:  # NaN
+            raise ValueError
+        config["search_min_relevance"] = relevance
+    except (TypeError, ValueError):
+        _warn_invalid("search_min_relevance", "a number")
+        config["search_min_relevance"] = DEFAULT_MIN_RELEVANCE
+    prompts = config["prompts"]
+    if not isinstance(prompts.get("picker"), str):
+        prompts["picker"] = defaults["prompts"]["picker"]
+    try:
+        prompts["preset_picker_threshold"] = int(prompts["preset_picker_threshold"])
+    except (TypeError, ValueError):
+        prompts["preset_picker_threshold"] = defaults["prompts"]["preset_picker_threshold"]
+
+
+def load_config() -> dict:
+    """The effective settings. A pure read: it creates no file and no directory."""
+    config = _defaults()
     raw_file = read_config_file()
     for k, v in raw_file.items():
-        if k in ("prompts", "backup", "npx") and isinstance(v, dict):
-            config[k].update(v)
-        elif k == "custom_agents" and isinstance(v, dict):
-            config["custom_agents"].update(v)
+        if k in _DICT_SECTIONS:
+            # A bare `npx:` is None: nothing configured, keep the defaults.
+            if isinstance(v, dict):
+                config[k].update(v)
+            elif v is not None:
+                _warn_invalid(k, "a mapping")
         elif k in config:
             config[k] = v
+    _sanitize(config)
 
     try:
         raw_limit = raw_file.get("search_limit")
@@ -268,13 +355,7 @@ def load_config() -> dict:
     # (`PRESETS_DIR / "/tmp/x"` is just "/tmp/x"), so refuse it rather than create
     # and later operate on a directory outside ~/.skill-ctl/presets.
     default_preset = config["default_preset"]
-    if (
-        not isinstance(default_preset, str)
-        or not default_preset.strip()
-        or default_preset in (".", "..")
-        or "/" in default_preset
-        or "\\" in default_preset
-    ):
+    if not isinstance(default_preset, str) or not valid_preset_name(default_preset.strip()):
         warnings.warn(
             f"Invalid default_preset {default_preset!r} in {CONFIG_FILE}; using 'default'.",
             RuntimeWarning,

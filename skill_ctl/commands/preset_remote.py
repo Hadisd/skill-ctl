@@ -18,7 +18,7 @@ from skill_ctl.archive import (
 )
 from skill_ctl.archive import export_preset as write_archive
 from skill_ctl.backup import maybe_auto_push
-from skill_ctl.config import load_config
+from skill_ctl.config import load_config, valid_preset_name
 from skill_ctl.constants import PRESETS_DIR, PREVIEW_TOGGLE_BIND, preview_window_options
 from skill_ctl.picker import preview_markdown_command, wants_picker
 from skill_ctl.skillscan import get_preset_skills
@@ -28,7 +28,7 @@ from skill_ctl.ui import console, print_error, print_header, print_success, prin
 
 def _preset_path(preset_name: str) -> Path:
     name = str(preset_name)
-    if not name or name in (".", "..") or "/" in name or "\\" in name:
+    if not valid_preset_name(name):
         print_error(f"Invalid preset name '{name}': must be a single directory name.")
         sys.exit(1)
     return PRESETS_DIR / name

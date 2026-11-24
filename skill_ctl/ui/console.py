@@ -5,6 +5,7 @@ import sys
 from typing import Optional
 
 from rich.console import Console
+from rich.errors import MarkupError
 from rich.markup import escape
 
 from skill_ctl.ui.theme import build_theme
@@ -22,6 +23,15 @@ class _LazyConsole:
 
     def __getattr__(self, name: str):
         return getattr(self._get(), name)
+
+    def print(self, *args, **kwargs):
+        """Console.print, but text with a stray tag (e.g. "[/x]" in a skill description,
+        which comes from whoever wrote the skill) is shown literally instead of raising."""
+        try:
+            return self._get().print(*args, **kwargs)
+        except MarkupError:
+            kwargs["markup"] = False
+            return self._get().print(*args, **kwargs)
 
     # Python looks up context-manager methods on the class, bypassing __getattr__.
     def __enter__(self) -> Console:

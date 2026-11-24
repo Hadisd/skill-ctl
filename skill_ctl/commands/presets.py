@@ -27,13 +27,14 @@ LIST_LIMIT = 25
 # a preset of a few hundred skills would otherwise be the whole screen.
 TABLE_LIMIT = 8
 
-from skill_ctl.archive import replace_directory_atomically
+from skill_ctl.archive import copy_skill_tree, replace_directory_atomically
 from skill_ctl.backup import maybe_auto_push
 from skill_ctl.config import (
     get_agent_dir_map,
     global_skill_dirs,
     invalidate_config_cache,
     load_config,
+    valid_preset_name,
 )
 from skill_ctl.constants import (
     ALL_PRESETS,
@@ -84,7 +85,7 @@ def preset_path(preset_name: str) -> Path:
     PRESETS_DIR ('..', a nested path, or an absolute path - `PRESETS_DIR / "/x"`
     is just "/x", and `presets delete` would then rmtree it)."""
     name = str(preset_name)
-    if not name or name in (".", "..") or "/" in name or "\\" in name:
+    if not valid_preset_name(name):
         print_error(f"Invalid preset name '{name}': must be a single directory name.")
         sys.exit(1)
     return PRESETS_DIR / name
@@ -99,6 +100,19 @@ def ensure_preset_dir(preset_name: str = "default") -> Path:
 ARCHIVE_FORMAT = 1
 HISTORY_FILE = ".skctl.json"
 LEGACY_HISTORY_FILE = ".skctl-history.json"
+
+
+def _copy_skill_folder(source: Path, destination: Path) -> None:
+    """Copy a skill from outside the presets into one.
+
+    A preset is backed up and pushed, so a link that leaves the skill folder
+    (to an SSH key, say) is dropped rather than followed, and a dangling one
+    cannot abort the copy.
+    """
+    for link in copy_skill_tree(source, destination):
+        print_warn(
+            f"Skipped symlink leaving the skill folder: {destination.name}/{link.as_posix()}"
+        )
 
 
 def _write_history(
@@ -214,7 +228,7 @@ def clone_preset(
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".skctl-clone-", dir=destination.parent) as temporary:
         staged = Path(temporary) / destination.name
-        shutil.copytree(source, staged)
+        shutil.copytree(source, staged, symlinks=True)  # an exact copy, links included
         _write_history(staged, "clone", [source_name], get_preset_skills(staged))
         replace_directory_atomically(staged, destination)
     print_success(f"Cloned preset '{source_name}' to '{destination_name}'")
@@ -279,7 +293,7 @@ def combine_presets(
         staged = Path(temporary) / destination.name
         staged.mkdir()
         for skill_name, (_, skill_path) in skills.items():
-            shutil.copytree(skill_path, staged / skill_name)
+            shutil.copytree(skill_path, staged / skill_name, symlinks=True)
         _write_history(staged, "combine", source_names, skills)
         replace_directory_atomically(staged, destination)
     print_success(f"Combined {len(skills)} skills into preset '{destination_name}'")
@@ -326,7 +340,7 @@ def copy_skills_from_path(source_path: str, destination: Path) -> int:
         if target.exists():
             print_warn(f"Skipping {name}; it is already in '{destination.name}'.")
             continue
-        shutil.copytree(skill, target)
+        _copy_skill_folder(skill, target)
         copied += 1
     print_success(
         f"Copied {copied} skill{'s' if copied != 1 else ''} from {source} to '{destination.name}'"
@@ -896,7 +910,7 @@ def install_skills_into_preset(name: str, preset_dir: Path, rows: list[dict]) ->
             print_warn(f"Skipping {row['skill']} (already in '{name}')")
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(row["path"], dst)
+        _copy_skill_folder(Path(row["path"]), dst)
         added += 1
         if row.get("scope") == "global":
             copied_without_lock.append(row["skill"])

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Optional, Union
 
 import typer
+from rich.markup import escape
 from rich.prompt import Confirm
 
 from skill_ctl.backup import maybe_auto_push
@@ -868,11 +869,11 @@ def info(
 
     print_header(f"Skill: {skill}")
     if description:
-        console.print(f"  [dim]Description:[/dim]  {description}")
+        console.print(f"  [dim]Description:[/dim]  {escape(description)}")
     if updated_str:
         console.print(f"  [dim]Updated:[/dim]      {updated_str}")
     if source:
-        console.print(f"  [dim]Source:[/dim]       {source}")
+        console.print(f"  [dim]Source:[/dim]       {escape(str(source))}")
     console.print(f"  [dim]Files:[/dim]        {len(file_list)} files ({size_str})")
     console.print(f"  [dim]Path:[/dim]         [path]{_display_path(canonical_dir)}[/path]")
 
@@ -880,7 +881,7 @@ def info(
     console.print("[bold]Installation Status:[/bold]")
 
     if presets_found:
-        p_names = ", ".join(f"[choice]{p['name']}[/choice]" for p in presets_found)
+        p_names = ", ".join(f"[choice]{escape(p['name'])}[/choice]" for p in presets_found)
         console.print(f"  [dim]Presets:[/dim]  {p_names}")
     else:
         console.print("  [dim]Presets:[/dim]  [dim](none)[/dim]")

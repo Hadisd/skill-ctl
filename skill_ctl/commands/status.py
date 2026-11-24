@@ -9,7 +9,7 @@ import typer
 from rich import box
 from rich.table import Table
 
-from skill_ctl.config import load_config, project_skill_dirs
+from skill_ctl.config import load_config, project_skill_dirs, valid_preset_name
 from skill_ctl.constants import PRESETS_DIR
 from skill_ctl.registry import load_applied, presets_for
 from skill_ctl.ui import console, print_error, print_header
@@ -17,7 +17,7 @@ from skill_ctl.ui import console, print_error, print_header
 
 def _preset_path(preset_name: str) -> Path:
     name = str(preset_name)
-    if not name or name in (".", "..") or "/" in name or "\\" in name:
+    if not valid_preset_name(name):
         print_error(f"Invalid preset name '{name}': must be a single directory name.")
         sys.exit(1)
     return PRESETS_DIR / name
